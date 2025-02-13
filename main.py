@@ -1,4 +1,5 @@
 from raster_utils import load_and_plot_raster, reproject_raster
+from hydrology import compute_hydrology
 
 def main():
     print("Inizio main")
@@ -17,6 +18,9 @@ def main():
     
     print("Caricamento radar ricalibrato . . .")
     reproject_raster_data, _ = load_and_plot_raster(reproject_raster_filepath, "Radar - Ricalibrato su DEM")
+    
+    print("Calcolo idrologico ...")
+    dem_slope, dem_flow_dir, dem_flow_acc = compute_hydrology(dem_data)
     
 if __name__ == "__main__":
     main()
