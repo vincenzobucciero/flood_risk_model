@@ -18,7 +18,7 @@ Questo repository contiene un modello per la valutazione del rischio di alluvion
  └── README.md             # Documentazione del progetto
 ```
 
-## Guida all'installazione
+## Guida all'installazione ed esecuzione
 
 Per configurare l'ambiente ed installare tutte le dipendenze necessarie.
 
