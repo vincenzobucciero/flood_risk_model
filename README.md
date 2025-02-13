@@ -39,13 +39,13 @@ Per configurare l'ambiente ed installare tutte le dipendenze necessarie.
 
    # attiva l'ambiente virtuale
    source venv/bin/activate # su linux/mac
-  ```
+   ``` 
 3. Installare le altre dipendenze
   ```bash
   pip install -r requirements.txt
   pip install richdem
   ```
-3. Esecuzione del Modello
+4. Esecuzione del Modello
    ```bash
   python main.py
   ```
