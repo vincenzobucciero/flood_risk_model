@@ -28,8 +28,6 @@ Per configurare l'ambiente ed installare tutte le dipendenze necessarie.
  cd flood_risk_model
  ```
 2. Configura l'ambiente virtuale
-   > [!NOTE]
-   > La libreria `richdem` richiede Python 3.10 per funzionare correttamente.
    ```bash
    # rimuovi l'ambiente virtuale esistente (se presente)
    rm -rf venv
@@ -47,5 +45,5 @@ Per configurare l'ambiente ed installare tutte le dipendenze necessarie.
   ```
 4. Esecuzione del Modello
    ```bash
-  python main.py
-  ```
+   python main.py
+   ```
