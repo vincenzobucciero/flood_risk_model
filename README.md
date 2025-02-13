@@ -1,38 +1,35 @@
-🌊 AI-Coupled Flood Model 🌎
+# Flood Risk Model
 
-🚀 High-Performance Computing for Weather Nowcasting with Artificial Intelligence
+Questo repository contiene un modello per la valutazione del rischio di alluvione basato su dati raster.
 
-Questo repository contiene un modello avanzato per la previsione meteorologica immediata (nowcasting) e la valutazione del rischio di inondazione, sfruttando tecniche di Intelligenza Artificiale e calcolo ad alte prestazioni.
+## Struttura del progetto
 
-📂 Struttura del Progetto
+```
+ flood_risk_model/
+ │
+ ├── main.py               # Script principale per eseguire il modello
+ ├── raster_utils.py       # Funzioni per la gestione e analisi dei dati raster
+ ├── hydrology.py          # Modulo per calcoli idrologici e modellazione
+ ├── alert_system.py       # Sistema di allerta basato sui risultati del modello
+ ├── data/                 # Cartella contenente i dati di input
+ │   ├── dem.tif           # Modello digitale di elevazione (DEM)
+ │   ├── radar.tif         # Dati radar grezzi
+ │   └── reprojected_radar.tif # Dati radar rielaborati e riproiettati
+ └── README.md             # Documentazione del progetto
+```
 
-flood_risk_model/
-│
-├── main.py                 # 🚀 Script principale per l'esecuzione del modello
-├── raster_utils.py         # 🗺️ Utility per la manipolazione di dati raster
-├── hydrology.py            # 💧 Moduli per il calcolo idrologico
-├── alert_system.py         # ⚠️ Sistema di allerta per il rischio di inondazione
-├── data/                   # 📊 Cartella dei dati di input
-│   ├── dem.tif             # 🌍 Modello digitale di elevazione (DEM)
-│   ├── radar.tif           # 🌧️ Dati radar grezzi
-│   └── reprojected_radar.tif # 🛰️ Dati radar rielaborati e riproiettati
-└── README.md               # 📖 Documentazione del progetto
+## Requisiti
 
-🛠️ Requisiti
+Per eseguire il progetto, assicurati di avere installati i seguenti pacchetti Python:
 
-Per eseguire questo progetto, installare le seguenti dipendenze:
-
+```bash
 pip install -r requirements.txt
+```
 
-🚀 Utilizzo
+## Utilizzo
 
-Eseguire lo script principale con:
+Esegui lo script principale con:
 
+```bash
 python main.py
-
-🌟 Funzionalità
-
-✅ Previsione meteorologica immediata (Nowcasting): Modelli AI per il meteo a breve termine.
-✅ Analisi raster: Manipolazione e preprocessing di dati raster.
-✅ Modelli idrologici avanzati: Simulazione di flussi idrici basati su dati DEM e radar.
-✅ Sistema di allerta intelligente: Generazione di avvisi basati su modelli AI per il rischio di inondazione.
+```
