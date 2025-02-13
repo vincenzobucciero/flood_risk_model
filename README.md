@@ -29,7 +29,7 @@ Per configurare l'ambiente ed installare tutte le dipendenze necessarie.
    cd flood_risk_model
    ```
 2. Configura l'ambiente virtuale
-   > [!NOTE] 
+   > **NOTE**
    > La libreria `RichDEM` richiede funzionalità specifiche di `Python 3.10` per funzionare correttamente. Altre versioni di Python potrebbero non supportare alcune dipendenze o funzionalità utilizzate dalla libreria.
    
    ```bash
