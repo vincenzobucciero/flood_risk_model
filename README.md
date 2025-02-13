@@ -23,11 +23,13 @@ Questo repository contiene un modello per la valutazione del rischio di alluvion
 Per configurare l'ambiente ed installare tutte le dipendenze necessarie.
 
 1. Clona il repository
- ```bash
- git clone https://github.com/checcafor/flood_risk_model
- cd flood_risk_model
- ```
+   
+   ```bash
+   git clone https://github.com/checcafor/flood_risk_model
+   cd flood_risk_model
+   ```
 2. Configura l'ambiente virtuale
+   
    ```bash
    # rimuovi l'ambiente virtuale esistente (se presente)
    rm -rf venv
@@ -39,11 +41,13 @@ Per configurare l'ambiente ed installare tutte le dipendenze necessarie.
    source venv/bin/activate # su linux/mac
    ``` 
 3. Installare le altre dipendenze
-  ```bash
-  pip install -r requirements.txt
-  pip install richdem
-  ```
+   
+   ```bash
+   pip install -r requirements.txt
+   pip install richdem
+   ```
 4. Esecuzione del Modello
+   
    ```bash
    python main.py
    ```
