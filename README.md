@@ -18,18 +18,38 @@ Questo repository contiene un modello per la valutazione del rischio di alluvion
  └── README.md             # Documentazione del progetto
 ```
 
-## Requisiti
+## Guida all'installazione ed esecuzione
 
-Per eseguire il progetto, assicurati di avere installati i seguenti pacchetti Python:
+Per configurare l'ambiente ed installare tutte le dipendenze necessarie.
 
-```bash
-pip install -r requirements.txt
-```
+1. Clona il repository
+   
+   ```bash
+   git clone https://github.com/checcafor/flood_risk_model
+   cd flood_risk_model
+   ```
+2. Configura l'ambiente virtuale
+   > **ℹ NOTE**
+   > La libreria `RichDEM` richiede funzionalità specifiche di `Python 3.10` per funzionare correttamente. Altre versioni di Python potrebbero non supportare alcune dipendenze o funzionalità utilizzate dalla libreria.
+   
+   ```bash
+   # rimuovi l'ambiente virtuale esistente (se presente)
+   rm -rf venv
 
-## Utilizzo
+   # crea un nuovo ambiente virtuale con Python 3.10
+   python3.10 -m venv venv
 
-Esegui lo script principale con:
-
-```bash
-python main.py
-```
+   # attiva l'ambiente virtuale
+   source venv/bin/activate # su linux/mac
+   ``` 
+4. Installare le altre dipendenze
+   
+   ```bash
+   pip install -r requirements.txt
+   pip install richdem
+   ```
+5. Esecuzione del Modello
+   
+   ```bash
+   python main.py
+   ```
