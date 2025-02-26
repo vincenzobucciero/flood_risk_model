@@ -1,35 +1,52 @@
-import richdem as rd
+import rasterio
 import numpy as np
 import matplotlib.pyplot as plt
 
-def compute_hydrology(dem_array):
+def compute_runoff(precipitation, cn_map):
     """
-        Calcola la pendenza, direzione del flusso e accumulo del flusso
-        
-        args:
-            dem_array(numpy): array contenente il dem
-            
-        return: 
-            pendenza, direzione del flusso e accumulo del flusso
+    Calcola il deflusso superficiale basato sul metodo SCS-CN.
+    
+    :param precipitation: Array numpy contenente i dati di precipitazione.
+    :param cn_map: Array numpy contenente la mappa Curve Number.
+    :return: Array numpy contenente il deflusso superficiale (Runoff).
     """
-    dem = rd.rdarray(dem_array, no_data = np.nan)
-    slope = rd.TerrainAttribute(dem, attrib = 'slope_riserun')
-    flow_dir = rd.FlowDirectionD8(dem)
-    flow_acc = rd.FlowAccumulation(dem, method = 'D8')
+    # Gestione dei valori NaN o negativi nel CN map
+    cn_map = np.where(cn_map <= 0, 1e-6, cn_map)  # Evita divisione per zero
     
-    plt.figure(figsize=(15, 4))
-    plt.subplots(1, 3, 1)
-    plt.title("Pendenza del Terreno")
-    plt.imshow(slope, cmap='terrain')
-    plt.colorbar()
-    plt.subplot(1, 3, 2)
-    plt.title("Direzione del Flusso")
-    plt.imshow(flow_dir, cmap='Blues')
-    plt.colorbar()
-    plt.subplot(1, 3, 3)
-    plt.title("Accumulo di Flusso")
-    plt.imshow(np.log1p(flow_acc), cmap='viridis')
-    plt.colorbar()
-    plt.show()
+    # Calcola la capacità di ritenzione S
+    S = (1000 / cn_map) - 10
+    S = np.where(S < 0, 0, S)  # Imposta S a 0 se negativo
     
-    return slope, flow_dir, flow_acc
+    # Gestione dei valori NaN o negativi nella precipitazione
+    precipitation = np.where(precipitation <= 0, 0, precipitation)
+    
+    # Calcola il deflusso superficiale
+    runoff = np.zeros_like(precipitation, dtype=np.float32)
+    valid_mask = precipitation > 0.2 * S  # Maschera per le celle valide
+    
+    # Evita divisioni per zero
+    denominator = precipitation + 0.8 * S
+    denominator = np.where(denominator == 0, 1e-6, denominator)  # Evita divisione per zero
+    
+    runoff[valid_mask] = ((precipitation[valid_mask] - 0.2 * S[valid_mask]) ** 2) / denominator[valid_mask]
+    
+    return runoff
+
+# Funzione per generare una mappa del rischio di alluvione
+def generate_flood_risk_map(dem, runoff, flow_accumulation):
+    """
+    Combina DEM, runoff e flow accumulation per generare una mappa del rischio.
+    """
+    flood_risk = (runoff * flow_accumulation) / (dem + 1)
+    flood_risk = np.clip(flood_risk, 0, 1)
+    return flood_risk
+
+# Funzione di avviso di alluvione
+def flood_alert(flood_risk):
+    """
+    Se il rischio supera una soglia critica, genera un avviso di alluvione.
+    """
+    if np.max(flood_risk) > 0.8:
+        print("🚨 ATTENZIONE: Alto rischio di alluvione! 🚨")
+    else:
+        print("✅ Nessun rischio di alluvione significativo.")
