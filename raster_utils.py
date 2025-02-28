@@ -3,105 +3,220 @@ from rasterio.plot import show
 from rasterio.warp import calculate_default_transform, reproject, Resampling
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.ndimage import map_coordinates
 from osgeo import gdal
 import os
 
-def load_and_plot_raster(file_path, title): 
+def load_and_plot_dem(file_path, title="Modello Digitale Elevazione (DEM)"):
     """
-        Carica un file raster e lo visualizza 
-        
-        args: 
-            file_path(string): percorso del file raster
-            title(string): titolo della visualizzazione
-            
-        returns: dati raster e profilo
+    Carica e visualizza un raster DEM.
+    
+    args:
+        file_path (str): Percorso del file raster DEM.
+        title (str): Titolo della visualizzazione.
+    
+    returns:
+        data (numpy.ndarray): Dati raster DEM.
+        profile (dict): Profilo del raster.
     """
     with rasterio.open(file_path) as src:
         data = src.read(1)
         profile = src.profile
         print(f"{title} Metadata:\n", profile)
-        plt.figure(figsize=(8,6))
+        
+        # Visualizza il DEM con un colormap 'terrain'
+        plt.figure(figsize=(8, 6))
         plt.title(title)
-        plt.imshow(data, cmap='terrain' if 'dem' in file_path.lower() else 'Blues')
-        plt.colorbar(label='Altitudine (m)' if 'dem' in file_path.lower() else 'Intensità di pioggia (mm/h)')
+        plt.imshow(data, cmap='terrain')
+        plt.colorbar(label='Altitudine (m)')
+        plt.axis('off')  # Nasconde gli assi
         plt.show()
+        
         return data, profile
     
-# questa sotto non viene utilizzata
-def reproject_raster(input_path, reference_profile, output_path):
+def load_and_plot_rainfall(file_path, title="Raster Pioggia"):
     """
-        Ricalibra raster per la risoluzione
-        
-        args:
-            input_path(string): percorso del raster da ricalibrare
-            reference_profile: profilo di riferimento del dem
-            output_path(string): percorso del raster ricalibrato
+    Carica e visualizza un raster delle precipitazioni.
+    
+    args:
+        file_path (str): Percorso del file raster delle precipitazioni.
+        title (str): Titolo della visualizzazione.
+    
+    returns:
+        data (numpy.ndarray): Dati raster delle precipitazioni.
+        profile (dict): Profilo del raster.
     """
-    with rasterio.open(input_path) as src:
-        transform, width, height = calculate_default_transform(
-            src.crs, reference_profile['crs'], reference_profile['width'], reference_profile['height'], *src.bounds
-        )
+    with rasterio.open(file_path) as src:
+        data = src.read(1)
+        profile = src.profile
+        print(f"{title} Metadata:\n", profile)
         
-        profile = src.profile.copy()
-        profile.update({
-            'crs': reference_profile['crs'],
-            'transform': transform,
-            'width': width,
-            'height': height
-        })
+        # Gestione dei valori NaN o negativi
+        data = np.where(data <= 0, np.nan, data)
         
-        with rasterio.open(output_path, 'w', **profile) as dst:
-            for i in range(1, src.count + 1):
-                reproject(
-                    source = rasterio.band(src, i),
-                    destination = rasterio.band(dst, i),
-                    src_transform = src.transform,
-                    src_crs = src.crs,
-                    dst_transform = dst.transform,
-                    dst_crs = reference_profile['crs'],
-                    resampling = Resampling.bilinear
-                )
-        print(f"Raster ricalibrato salvato in {output_path}")
+        # Visualizza il raster della pioggia con un colormap 'Blues'
+        plt.figure(figsize=(8, 6))
+        plt.title(title)
+        cmap = plt.cm.Blues
+        cmap.set_bad(color='lightgray')  # Colora i valori NaN in grigio chiaro
+        plt.imshow(data, cmap=cmap)
+        plt.colorbar(label='Intensità di pioggia (mm/h)')
+        plt.axis('off')  # Nasconde gli assi
+        plt.show()
         
-def align_radar_to_dem(radar_tiff, dem_tiff, output_radar_tiff):
+        return data, profile
+    
+def load_and_plot_land_cover(file_path, title="Mappa Land Cover"):
     """
-    Riproietta e riallinea un file radar al DEM senza distorsioni.
-
-    :param radar_tiff: Percorso del file TIFF del radar.
-    :param dem_tiff: Percorso del file TIFF del DEM.
-    :param output_radar_tiff: Percorso del file TIFF risultante dopo l'allineamento.
+    Carica e visualizza una mappa della land cover.
+    
+    args:
+        file_path (str): Percorso del file raster della land cover.
+        title (str): Titolo della visualizzazione.
+    
+    returns:
+        data (numpy.ndarray): Dati raster della land cover.
+        profile (dict): Profilo del raster.
     """
-    with rasterio.open(dem_tiff) as dem:
-        dem_crs = dem.crs
-        dem_transform = dem.transform
-        dem_width = dem.width
-        dem_height = dem.height
-        dem_bounds = dem.bounds
-        dem_resolution_x = dem_transform[0]  
-        dem_resolution_y = -dem_transform[4]  
+    with rasterio.open(file_path) as src:
+        data = src.read(1)
+        profile = src.profile
+        print(f"{title} Metadata:\n", profile)
+        
+        # Gestione delle aree d'acqua (esclusione dei valori specifici)
+        water_value = 0  # Assumiamo che il valore per l'acqua sia 0 (modificabile)
+        data = np.where(data == water_value, np.nan, data)
+        
+        # Visualizza la land cover con un colormap personalizzato
+        plt.figure(figsize=(8, 6))
+        plt.title(title)
+        cmap = plt.cm.viridis
+        cmap.set_bad(color='lightblue')  # Colora le aree d'acqua in azzurro chiaro
+        plt.imshow(data, cmap=cmap)
+        plt.colorbar(label='Tipo di copertura terrestre')
+        plt.axis('off')  # Nasconde gli assi
+        plt.show()
+        
+        return data, profile
 
-    with rasterio.open(radar_tiff) as radar:
-        radar_crs = radar.crs
+def visualize_flood_risk(flood_risk_map, title="Mappa del Rischio di Alluvione"):
+    plt.figure(figsize=(10, 8))
+    plt.imshow(flood_risk_map, cmap='Reds', interpolation='nearest')
+    plt.colorbar(label="Intensità del Rischio")
+    plt.title(title)
+    plt.xlabel("Colonne")
+    plt.ylabel("Righe")
+    plt.show()
 
-        print(f"CRS DEM: {dem_crs}, CRS Radar: {radar_crs}")
-        print(f"DEM Risoluzione: {dem_resolution_x}, {dem_resolution_y}")
+def align_radar_to_dem(radar_tiff, dem_tiff, output_tiff):
+    """
+    Allinea un raster radar al DEM basandosi sulle coordinate centrali delle celle del DEM.
 
+    args:
+        radar_tiff (str): Percorso del file radar da allineare.
+        dem_tiff (str): Percorso del file DEM di riferimento.
+        output_tiff (str): Percorso del file raster allineato risultante.
+
+    returns:
+        None
+    """
+    # Carica il DEM
+    with rasterio.open(dem_tiff) as dem_src:
+        dem_data = dem_src.read(1)
+        dem_profile = dem_src.profile
+        dem_transform = dem_src.transform
+        dem_width, dem_height = dem_src.width, dem_src.height
+        dem_crs = dem_src.crs
+
+        # Calcola le coordinate centrali delle celle del DEM
+        x_coords = np.linspace(dem_transform[2] + dem_transform[0] / 2, 
+                               dem_transform[2] + dem_transform[0] * dem_width - dem_transform[0] / 2, 
+                               dem_width)
+        y_coords = np.linspace(dem_transform[5] + dem_transform[4] / 2, 
+                               dem_transform[5] + dem_transform[4] * dem_height - dem_transform[4] / 2, 
+                               dem_height)
+        xv, yv = np.meshgrid(x_coords, y_coords)
+
+    # Carica il radar
+    with rasterio.open(radar_tiff) as radar_src:
+        radar_data = radar_src.read(1)
+        radar_profile = radar_src.profile
+        radar_transform = radar_src.transform
+        radar_crs = radar_src.crs
+
+        # Verifica se i CRS sono diversi e converte se necessario
         if radar_crs != dem_crs:
             print("⚠️ ATTENZIONE: Il CRS del radar è diverso da quello del DEM. Viene effettuata la conversione.")
+            radar_src = rasterio.warp.reproject(
+                source=radar_data,
+                src_transform=radar_transform,
+                src_crs=radar_crs,
+                dst_crs=dem_crs,
+                dst_shape=(dem_height, dem_width),
+                resampling=rasterio.enums.Resampling.bilinear
+            )
+            radar_data = radar_src[0]
 
-    options = gdal.WarpOptions(
-        format = "GTiff",
-        dstSRS = str(dem_crs),
-        xRes = dem_resolution_x,  
-        yRes = dem_resolution_y,  
-        width = dem_width,  
-        height = dem_height, 
-        outputBounds = [dem_bounds.left, dem_bounds.bottom, dem_bounds.right, dem_bounds.top],
-        resampleAlg = gdal.GRA_Cubic  
-    )
+    # Interpola i valori del radar alle coordinate centrali del DEM
+    radar_x = np.linspace(radar_src.bounds.left, radar_src.bounds.right, radar_src.width)
+    radar_y = np.linspace(radar_src.bounds.top, radar_src.bounds.bottom, radar_src.height)
+    radar_xv, radar_yv = np.meshgrid(radar_x, radar_y)
 
-    gdal.Warp(output_radar_tiff, radar_tiff, options=options)
-    print(f"✅ File radar riallineato salvato in: {output_radar_tiff}") 
+    # Normalizza le coordinate del DEM rispetto al radar
+    radar_x_indices = (xv - radar_x[0]) / (radar_x[-1] - radar_x[0]) * (radar_src.width - 1)
+    radar_y_indices = (yv - radar_y[0]) / (radar_y[-1] - radar_y[0]) * (radar_src.height - 1)
+
+    # Interpolazione bilineare
+    radar_aligned = map_coordinates(radar_data, [radar_y_indices.ravel(), radar_x_indices.ravel()], order=1, mode='nearest')
+    radar_aligned = radar_aligned.reshape(dem_height, dem_width)
+
+    # Salva il raster allineato
+    aligned_profile = dem_profile.copy()
+    aligned_profile.update(dtype=rasterio.float32, nodata=np.nan)
+    with rasterio.open(output_tiff, "w", **aligned_profile) as dst:
+        dst.write(radar_aligned.astype(rasterio.float32), 1)
+
+    print(f"✅ File radar allineato salvato in: {output_tiff}")
+     
+# def align_radar_to_dem(radar_tiff, dem_tiff, output_radar_tiff):
+#     """
+#     Riproietta e riallinea un file radar al DEM senza distorsioni.
+
+#     :param radar_tiff: Percorso del file TIFF del radar.
+#     :param dem_tiff: Percorso del file TIFF del DEM.
+#     :param output_radar_tiff: Percorso del file TIFF risultante dopo l'allineamento.
+#     """
+#     with rasterio.open(dem_tiff) as dem:
+#         dem_crs = dem.crs
+#         dem_transform = dem.transform
+#         dem_width = dem.width
+#         dem_height = dem.height
+#         dem_bounds = dem.bounds
+#         dem_resolution_x = dem_transform[0]  
+#         dem_resolution_y = -dem_transform[4]  
+
+#     with rasterio.open(radar_tiff) as radar:
+#         radar_crs = radar.crs
+
+#         print(f"CRS DEM: {dem_crs}, CRS Radar: {radar_crs}")
+#         print(f"DEM Risoluzione: {dem_resolution_x}, {dem_resolution_y}")
+
+#         if radar_crs != dem_crs:
+#             print("⚠️ ATTENZIONE: Il CRS del radar è diverso da quello del DEM. Viene effettuata la conversione.")
+
+#     options = gdal.WarpOptions(
+#         format = "GTiff",
+#         dstSRS = str(dem_crs),
+#         xRes = dem_resolution_x,  
+#         yRes = dem_resolution_y,  
+#         width = dem_width,  
+#         height = dem_height, 
+#         outputBounds = [dem_bounds.left, dem_bounds.bottom, dem_bounds.right, dem_bounds.top],
+#         resampleAlg = gdal.GRA_Cubic  
+#     )
+
+#     gdal.Warp(output_radar_tiff, radar_tiff, options=options)
+#     print(f"✅ File radar riallineato salvato in: {output_radar_tiff}") 
     
 def crop_tiff_to_campania(input_tiff, output_tiff):
     """
@@ -218,23 +333,41 @@ def visualize_combined(dem_data, radar_original_data, radar_reprojected_data):
     
     plt.tight_layout()  
     plt.show()
-    
 
-def plot_flood_risk_map(dem_data, runoff_map, flow_accumulation, flood_risk):
+def plot_runoff_on_land_cover(land_cover_data, runoff_data, title="Deflusso Superficiale su Land Cover"):
+    """
+    Visualizza il deflusso superficiale sovrapponendolo alla mappa della land cover.
+
+    args:
+        land_cover_data (numpy.ndarray): Dati raster della land cover.
+        runoff_data (numpy.ndarray): Dati del deflusso superficiale.
+        title (str): Titolo della visualizzazione.
+
+    returns:
+        None
+    """
+    # Gestione dei valori NaN nella land cover e nel runoff
+    land_cover_data = np.where(land_cover_data <= 0, np.nan, land_cover_data)
+    runoff_data = np.where(runoff_data < 0, 0, runoff_data)  # Assicura valori non negativi
+
+    # Visualizza la land cover come sfondo
     plt.figure(figsize=(10, 8))
-    plt.title("Mappa delle Zone a Rischio di Alluvione")
-    
-    # Sfondo DEM
-    plt.imshow(dem_data, cmap="gray", alpha=0.5)
-    
-    # Sovrapposizione runoff (deflusso superficiale)
-    plt.imshow(runoff_map, cmap="Blues", alpha=0.4)
+    plt.title(title)
 
-    # Sovrapposizione accumulo del flusso
-    plt.imshow(flow_accumulation, cmap="Greens", alpha=0.3)
+    # Colormap per la land cover
+    cmap_land_cover = plt.cm.viridis
+    cmap_land_cover.set_bad(color='lightgray')  # Colora le aree NaN in grigio chiaro
+    plt.imshow(land_cover_data, cmap=cmap_land_cover, alpha=0.7, label="Land Cover")
 
-    # Evidenziazione zone ad alto rischio di alluvione
-    plt.imshow(flood_risk, cmap="Reds", alpha=0.6)
-    
-    plt.colorbar(label="Indice di rischio")
+    # Sovrappone il deflusso superficiale
+    cmap_runoff = plt.cm.Reds
+    cmap_runoff.set_under(color='none')  # Non visualizza i valori bassi di runoff
+    plt.imshow(runoff_data, cmap=cmap_runoff, alpha=0.6, vmin=0.1, label="Runoff")
+
+    # Aggiunge una barra colore per il deflusso superficiale
+    cbar = plt.colorbar(label="Deflusso Superficiale (mm)", fraction=0.046, pad=0.04)
+    cbar.set_label("Deflusso Superficiale (mm)", rotation=270, labelpad=15)
+
+    # Nasconde gli assi
+    plt.axis('off')
     plt.show()

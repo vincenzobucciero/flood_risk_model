@@ -1,6 +1,7 @@
 import rasterio
 import numpy as np
 import matplotlib.pyplot as plt
+from multiprocessing import Pool, cpu_count
 
 def compute_runoff(precipitation, cn_map):
     """
@@ -50,3 +51,54 @@ def flood_alert(flood_risk):
         print("🚨 ATTENZIONE: Alto rischio di alluvione! 🚨")
     else:
         print("✅ Nessun rischio di alluvione significativo.")
+        
+# calcolo D8
+D8_OFFSETS = [(-1, -1), (-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0), (1, -1), (0, -1)]
+D8_VALUES = [128, 1, 2, 4, 8, 16, 32, 64]
+
+def calculate_flow_direction(window_data):
+    rows, cols = window_data.shape
+    flow_dir = np.zeros_like(window_data, dtype=np.uint8)
+    
+    for r in range(1, rows - 1):
+        for c in range(1, cols - 1):
+            center = window_data[r, c]
+            if np.isnan(center):
+                continue
+            min_diff = float("inf")
+            min_dir = 0
+            
+            for i, (dr, dc) in enumerate(D8_OFFSETS):
+                neighbor = window_data[r + dr, c + dc]
+                if not np.isnan(neighbor):
+                    diff = center - neighbor
+                    if diff > 0 and diff < min_diff:
+                        min_diff = diff
+                        min_dir = D8_VALUES[i]
+            flow_dir[r, c] = min_dir
+    return flow_dir[1:-1, 1:-1]
+
+def process_window(args):
+    window, data = args
+    return (window, calculate_flow_direction(data))
+
+def calculate_flow_direction_parallel(tiff_path, output_path):
+    with rasterio.open(tiff_path) as src:
+        profile = src.profile.copy()
+        profile.update(dtype=rasterio.uint8)
+
+        windows = [window for _, window in src.block_windows()]
+        data = [src.read(1, window=window) for window in windows]
+
+        with Pool(cpu_count()) as pool:
+            results = pool.map(process_window, zip(windows, data))
+
+        with rasterio.open(output_path, 'w', **profile) as dst:
+            for window, result in results:
+                dst.write(result, 1, window=window)
+                
+def calculate_flood_risk(d8_filepath, runoff):
+    with rasterio.open(d8_filepath) as d8_src:
+        d8_flow = d8_src.read(1)
+    flood_risk_map = d8_flow * runoff
+    return flood_risk_map
