@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 from scipy.ndimage import map_coordinates
 from osgeo import gdal
 import os
+import seaborn as sns
+import matplotlib.colors as mcolors
 
 def load_and_plot_dem(file_path, title="Modello Digitale Elevazione (DEM)"):
     """
@@ -24,12 +26,11 @@ def load_and_plot_dem(file_path, title="Modello Digitale Elevazione (DEM)"):
         profile = src.profile
         print(f"{title} Metadata:\n", profile)
         
-        # Visualizza il DEM con un colormap 'terrain'
         plt.figure(figsize=(8, 6))
-        plt.title(title)
+        plt.title(title, fontsize=14, fontweight="bold")
         plt.imshow(data, cmap='terrain')
         plt.colorbar(label='Altitudine (m)')
-        plt.axis('off')  # Nasconde gli assi
+        plt.axis('off')  
         plt.show()
         
         return data, profile
@@ -51,17 +52,15 @@ def load_and_plot_rainfall(file_path, title="Raster Pioggia"):
         profile = src.profile
         print(f"{title} Metadata:\n", profile)
         
-        # Gestione dei valori NaN o negativi
         data = np.where(data <= 0, np.nan, data)
         
-        # Visualizza il raster della pioggia con un colormap 'Blues'
         plt.figure(figsize=(8, 6))
-        plt.title(title)
+        plt.title(title, fontsize=14, fontweight="bold")
         cmap = plt.cm.Blues
-        cmap.set_bad(color='lightgray')  # Colora i valori NaN in grigio chiaro
+        cmap.set_bad(color='lightgray') 
         plt.imshow(data, cmap=cmap)
         plt.colorbar(label='Intensità di pioggia (mm/h)')
-        plt.axis('off')  # Nasconde gli assi
+        plt.axis('off')  
         plt.show()
         
         return data, profile
@@ -83,29 +82,79 @@ def load_and_plot_land_cover(file_path, title="Mappa Land Cover"):
         profile = src.profile
         print(f"{title} Metadata:\n", profile)
         
-        # Gestione delle aree d'acqua (esclusione dei valori specifici)
-        water_value = 0  # Assumiamo che il valore per l'acqua sia 0 (modificabile)
+        water_value = 0  
         data = np.where(data == water_value, np.nan, data)
         
-        # Visualizza la land cover con un colormap personalizzato
         plt.figure(figsize=(8, 6))
-        plt.title(title)
+        plt.title(title, fontsize=14, fontweight="bold")
         cmap = plt.cm.viridis
-        cmap.set_bad(color='lightblue')  # Colora le aree d'acqua in azzurro chiaro
+        cmap.set_bad(color='lightblue') 
         plt.imshow(data, cmap=cmap)
         plt.colorbar(label='Tipo di copertura terrestre')
-        plt.axis('off')  # Nasconde gli assi
+        plt.axis('off')  
         plt.show()
         
         return data, profile
 
-def visualize_flood_risk(flood_risk_map, title="Mappa del Rischio di Alluvione"):
-    plt.figure(figsize=(10, 8))
-    plt.imshow(flood_risk_map, cmap='Reds', interpolation='nearest')
-    plt.colorbar(label="Intensità del Rischio")
-    plt.title(title)
-    plt.xlabel("Colonne")
-    plt.ylabel("Righe")
+def visualize_flood_risk(risk_map):
+    """
+    Visualizza la mappa del rischio alluvionale con una legenda chiara.
+
+    :param risk_map: Array numpy contenente i dati di rischio alluvionale.
+    """
+    plt.figure(figsize=(10, 6))
+    
+    cmap = sns.color_palette("Reds", as_cmap=True)
+    img = plt.imshow(risk_map, cmap=cmap, interpolation="nearest")
+
+    cbar = plt.colorbar(img, fraction=0.046, pad=0.04)
+    cbar.set_label("Livello di Rischio di Alluvione", fontsize=12)
+    
+    plt.title("Mappa del Rischio Alluvionale", fontsize=14, fontweight="bold")
+    plt.xlabel("Longitudine (pixel)", fontsize=12)
+    plt.ylabel("Latitudine (pixel)", fontsize=12)
+    
+    plt.show()
+    
+def classify_risk_levels(risk_map):
+    """
+    Converte la mappa del rischio in classi discrete: basso, medio, alto, critico.
+    
+    :param risk_map: Array numpy contenente i dati di rischio alluvionale normalizzati tra 0 e 1.
+    :return: Mappa classificata in 4 livelli di rischio.
+    """
+    classified_map = np.zeros_like(risk_map)
+
+    classified_map[(risk_map >= 0.0) & (risk_map < 0.3)] = 1  # Basso (Verde)
+    classified_map[(risk_map >= 0.3) & (risk_map < 0.6)] = 2  # Medio (Giallo)
+    classified_map[(risk_map >= 0.6) & (risk_map < 0.8)] = 3  # Alto (Arancione)
+    classified_map[(risk_map >= 0.8)] = 4  # Critico (Rosso)
+
+    return classified_map
+
+def visualize_flood_risk_with_legend(risk_map):
+    """
+    Visualizza la mappa del rischio alluvionale con una legenda che identifica le aree a rischio.
+    
+    :param risk_map: Array numpy contenente i dati di rischio alluvionale.
+    """
+    classified_map = classify_risk_levels(risk_map)
+
+    cmap = mcolors.ListedColormap(["green", "yellow", "orange", "red"])
+    bounds = [1, 2, 3, 4, 5]  # Confini delle classi
+    norm = mcolors.BoundaryNorm(bounds, cmap.N)
+
+    plt.figure(figsize=(10, 6))
+    img = plt.imshow(classified_map, cmap=cmap, norm=norm, interpolation="nearest")
+
+    cbar = plt.colorbar(img, ticks=[1.5, 2.5, 3.5, 4.5])
+    cbar.set_ticklabels(["Basso", "Medio", "Alto", "Critico"])
+    cbar.set_label("Livello di Rischio di Alluvione", fontsize=12)
+
+    plt.title("Mappa del Rischio Alluvionale", fontsize=14, fontweight="bold")
+    plt.xlabel("Longitudine (pixel)", fontsize=12)
+    plt.ylabel("Latitudine (pixel)", fontsize=12)
+
     plt.show()
 
 def align_radar_to_dem(radar_tiff, dem_tiff, output_tiff):

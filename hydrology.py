@@ -2,6 +2,7 @@ import rasterio
 import numpy as np
 import matplotlib.pyplot as plt
 from multiprocessing import Pool, cpu_count
+from scipy.ndimage import gaussian_filter
 
 def compute_runoff(precipitation, cn_map):
     """
@@ -97,8 +98,46 @@ def calculate_flow_direction_parallel(tiff_path, output_path):
             for window, result in results:
                 dst.write(result, 1, window=window)
                 
-def calculate_flood_risk(d8_filepath, runoff):
-    with rasterio.open(d8_filepath) as d8_src:
-        d8_flow = d8_src.read(1)
-    flood_risk_map = d8_flow * runoff
-    return flood_risk_map
+# def calculate_flood_risk(d8_filepath, runoff):
+#     with rasterio.open(d8_filepath) as d8_src:
+#         d8_flow = d8_src.read(1)
+#     flood_risk_map = d8_flow * runoff
+#     return flood_risk_map
+
+def normalize(array):
+    """Normalizza un array tra 0 e 1."""
+    return (array - np.min(array)) / (np.max(array) - np.min(array) + 1e-6)
+  
+def compute_flood_risk(flow_direction_tiff, runoff):
+    """
+    Carica la direzione del flusso da TIFF, combina con il runoff e genera una mappa di rischio.
+    """
+    with rasterio.open(flow_direction_tiff) as src:
+        flow_direction = src.read(1).astype(np.float32)  
+
+    runoff_norm = normalize(runoff.astype(np.float32)) 
+    flow_norm = normalize(flow_direction)
+
+    risk_map = (0.7 * runoff_norm) + (0.3 * flow_norm)
+
+    return gaussian_filter(risk_map, sigma=2)
+  
+  
+# def compute_flood_risk(runoff, flow_direction):
+#     """
+#     Combina runoff e direzione del flusso per creare una mappa di rischio alluvionale.
+    
+#     :param runoff: Array numpy con il deflusso superficiale normalizzato.
+#     :param flow_direction: Array numpy con la direzione del flusso normalizzata.
+#     :return: Mappa del rischio alluvionale.
+#     """
+#     runoff_norm = normalize(runoff)
+#     flow_norm = normalize(flow_direction)
+    
+#     # Ponderazione: il runoff pesa di più rispetto alla direzione del flusso
+#     risk_map = (0.7 * runoff_norm) + (0.3 * flow_norm)
+    
+#     # Applica un filtro gaussiano per rendere la mappa più fluida
+#     risk_map = gaussian_filter(risk_map, sigma=2)
+    
+#     return risk_map

@@ -46,8 +46,11 @@ def main():
     print("Calcolo del D8 . . .")
     calculate_flow_direction_parallel(dem_filepath, "D8_output.tiff")
     
-    flood_risk_map = calculate_flood_risk("D8_output.tiff", runoff)
-    visualize_flood_risk(flood_risk_map)
+    flood_risk_map = compute_flood_risk("D8_output.tiff", runoff)
+    # visualize_flood_risk(flood_risk_map)
+    visualize_flood_risk_with_legend(flood_risk_map)
+    
+    print("Processo completato.")
 
 if __name__ == "__main__":
     main()
