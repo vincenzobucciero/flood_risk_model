@@ -8,6 +8,8 @@ from osgeo import gdal
 import os
 import seaborn as sns
 import matplotlib.colors as mcolors
+from scipy.ndimage import sobel
+from scipy.ndimage import binary_erosion
 
 def load_and_plot_dem(file_path, title="Modello Digitale Elevazione (DEM)"):
     """
@@ -31,6 +33,41 @@ def load_and_plot_dem(file_path, title="Modello Digitale Elevazione (DEM)"):
         plt.imshow(data, cmap='terrain')
         plt.colorbar(label='Altitudine (m)')
         plt.axis('off')  
+        plt.show()
+        
+        return data, profile
+
+def latlon_load_and_plot_dem(file_path, title="Modello Digitale Elevazione (DEM)"):
+    """
+    Carica e visualizza un raster DEM.
+    
+    args:
+        file_path (str): Percorso del file raster DEM.
+        title (str): Titolo della visualizzazione.
+    
+    returns:
+        data (numpy.ndarray): Dati raster DEM.
+        profile (dict): Profilo del raster.
+    """
+    with rasterio.open(file_path) as src:
+        data = src.read(1)  
+        profile = src.profile
+        transform = src.transform  
+        height, width = data.shape
+
+        lon, lat = np.meshgrid(
+            np.linspace(transform.c, transform.c + transform.a * width, width),
+            np.linspace(transform.f, transform.f + transform.e * height, height)
+        )
+
+        data = np.where(data <= 0, np.nan, data)
+
+        plt.figure(figsize=(8, 6))
+        plt.pcolormesh(lon, lat, data, cmap="terrain", shading="auto")
+        plt.colorbar(label="Altitudine (m)")
+        plt.xlabel("Longitudine")
+        plt.ylabel("Latitudine")
+        plt.title(title, fontsize=14, fontweight="bold")
         plt.show()
         
         return data, profile
@@ -65,6 +102,42 @@ def load_and_plot_rainfall(file_path, title="Raster Pioggia"):
         
         return data, profile
     
+def latlon_load_and_plot_rainfall(file_path, title="Raster Pioggia"):
+    """
+    Carica e visualizza un raster delle precipitazioni.
+    
+    args:
+        file_path (str): Percorso del file raster delle precipitazioni.
+        title (str): Titolo della visualizzazione.
+    
+    returns:
+        data (numpy.ndarray): Dati raster delle precipitazioni.
+        profile (dict): Profilo del raster.
+    """
+    with rasterio.open(file_path) as src:
+        data = src.read(1)  
+        profile = src.profile
+        transform = src.transform  
+        height, width = data.shape
+
+        lon, lat = np.meshgrid(
+            np.linspace(transform.c, transform.c + transform.a * width, width),
+            np.linspace(transform.f, transform.f + transform.e * height, height)
+        )
+
+        data = np.where(data <= 0, np.nan, data)
+
+        plt.figure(figsize=(8, 6))
+        cmap = plt.cm.Blues
+        plt.pcolormesh(lon, lat, data, cmap=cmap, shading="auto")
+        plt.colorbar(label='Intensità di pioggia (mm/h)')
+        plt.xlabel("Longitudine")
+        plt.ylabel("Latitudine")
+        plt.title(title, fontsize=14, fontweight="bold")
+        plt.show()
+        
+        return data, profile
+    
 def load_and_plot_land_cover(file_path, title="Mappa Land Cover"):
     """
     Carica e visualizza una mappa della land cover.
@@ -95,6 +168,71 @@ def load_and_plot_land_cover(file_path, title="Mappa Land Cover"):
         plt.show()
         
         return data, profile
+
+def latlon_load_and_plot_land_cover(file_path, title="Mappa Land Cover"):
+    """
+    Carica e visualizza una mappa della land cover.
+    
+    args:
+        file_path (str): Percorso del file raster della land cover.
+        title (str): Titolo della visualizzazione.
+    
+    returns:
+        data (numpy.ndarray): Dati raster della land cover.
+        profile (dict): Profilo del raster.
+    """
+    with rasterio.open(file_path) as src:
+        data = src.read(1)  
+        profile = src.profile
+        transform = src.transform  
+        height, width = data.shape
+
+        lon, lat = np.meshgrid(
+            np.linspace(transform.c, transform.c + transform.a * width, width),
+            np.linspace(transform.f, transform.f + transform.e * height, height)
+        )
+
+        data = np.where(data == 0, np.nan, data)
+
+        plt.figure(figsize=(8, 6))
+        cmap = plt.cm.viridis
+        cmap.set_bad(color='lightblue') 
+        plt.pcolormesh(lon, lat, data, cmap=cmap, shading="auto")
+        plt.colorbar(label='Tipo di copertura terrestre')
+        plt.xlabel("Longitudine")
+        plt.ylabel("Latitudine")
+        plt.title(title)
+        plt.show()
+        
+        return data, profile
+
+def plot_raster_with_latlon(file_path, title="Raster con coordinate geografiche"):
+    """
+    Carica un raster e lo visualizza utilizzando coordinate geografiche (latitudine/longitudine).
+    
+    args:
+        file_path (str): Percorso del file raster.
+        title (str): Titolo della visualizzazione.
+    """
+    with rasterio.open(file_path) as src:
+        data = src.read(1)  
+        transform = src.transform  
+        height, width = data.shape
+
+        lon, lat = np.meshgrid(
+            np.linspace(transform.c, transform.c + transform.a * width, width),
+            np.linspace(transform.f, transform.f + transform.e * height, height)
+        )
+
+        data = np.where(data <= 0, np.nan, data)
+
+        plt.figure(figsize=(8, 6))
+        plt.pcolormesh(lon, lat, data, cmap="terrain", shading="auto")
+        plt.colorbar(label="Altitudine (m)")
+        plt.xlabel("Longitudine")
+        plt.ylabel("Latitudine")
+        plt.title(title)
+        plt.show()
 
 def visualize_flood_risk(risk_map):
     """
@@ -406,7 +544,7 @@ def plot_runoff_on_land_cover(land_cover_data, runoff_data, title="Deflusso Supe
     # Colormap per la land cover
     cmap_land_cover = plt.cm.viridis
     cmap_land_cover.set_bad(color='lightgray')  # Colora le aree NaN in grigio chiaro
-    plt.imshow(land_cover_data, cmap=cmap_land_cover, alpha=0.7, label="Land Cover")
+    plt.imshow(land_cover_data, cmap="gray", alpha=0.5)
 
     # Sovrappone il deflusso superficiale
     cmap_runoff = plt.cm.Reds
@@ -420,3 +558,95 @@ def plot_runoff_on_land_cover(land_cover_data, runoff_data, title="Deflusso Supe
     # Nasconde gli assi
     plt.axis('off')
     plt.show()
+    
+# def plot_runoff_on_land_cover(land_cover_data, runoff_data, title="Deflusso Superficiale su Land Cover"):
+#     """
+#     Visualizza il deflusso superficiale sovrapponendolo ai soli margini della land cover.
+
+#     args:
+#         land_cover_data (numpy.ndarray): Dati raster della land cover.
+#         runoff_data (numpy.ndarray): Dati del deflusso superficiale.
+#         title (str): Titolo della visualizzazione.
+
+#     returns:
+#         None
+#     """
+#     # Trova i margini della land cover con il filtro Sobel
+#     grad_x = sobel(land_cover_data, axis=0, mode='constant')
+#     grad_y = sobel(land_cover_data, axis=1, mode='constant')
+#     land_cover_edges = np.hypot(grad_x, grad_y)  # Calcola il gradiente
+
+#     # Imposta una soglia per evidenziare solo i contorni più marcati
+#     land_cover_edges = np.where(land_cover_edges > 0, 1, np.nan)
+
+#     # Assicura che il runoff non abbia valori negativi
+#     runoff_data = np.where(runoff_data < 0, 0, runoff_data)
+
+#     # Crea la figura
+#     plt.figure(figsize=(10, 8))
+#     plt.title(title)
+
+#     # Disegna solo i margini della land cover in nero
+#     plt.imshow(land_cover_edges, cmap="gray", alpha=1.0)
+
+#     # Sovrappone il deflusso superficiale
+#     cmap_runoff = plt.cm.Reds
+#     cmap_runoff.set_under(color='none')  # Non visualizza i valori bassi di runoff
+#     plt.imshow(runoff_data, cmap=cmap_runoff, alpha=0.6, vmin=0.1)
+
+#     # Aggiunge una barra colore per il deflusso superficiale
+#     cbar = plt.colorbar(label="Deflusso Superficiale (mm)", fraction=0.046, pad=0.04)
+#     cbar.set_label("Deflusso Superficiale (mm)", rotation=270, labelpad=15)
+
+#     # Nasconde gli assi
+#     plt.axis('off')
+#     plt.show()    
+
+def plot_territory_boundaries(land_cover_data, runoff_data, title="Confini del Territorio"):
+    """
+    Visualizza solo i confini del territorio senza dettagli interni.
+
+    args:
+        land_cover_data (numpy.ndarray): Dati raster della land cover.
+        runoff_data (numpy.ndarray): Dati del deflusso superficiale.
+        title (str): Titolo della visualizzazione.
+
+    returns:
+        None
+    """
+    # Crea una maschera binaria dell'area coperta (1 dove c'è territorio, 0 altrove)
+    territory_mask = land_cover_data > 0
+
+    # Trova solo il bordo esterno del territorio
+    territory_edges = territory_mask ^ binary_erosion(territory_mask)
+
+    # Assicura che il runoff non abbia valori negativi
+    runoff_data = np.where(runoff_data < 0, 0, runoff_data)
+
+    # Crea la figura
+    plt.figure(figsize=(10, 8))
+    plt.title(title)
+
+    # Disegna solo i contorni del territorio con `plt.contour`
+    plt.contour(territory_edges, levels=[0.5], colors="white", linewidths=1.5)
+
+    # Sovrappone il deflusso superficiale
+    cmap_runoff = plt.cm.Reds
+    cmap_runoff.set_under(color='none')  # Non visualizza i valori bassi di runoff
+    plt.imshow(runoff_data, cmap=cmap_runoff, alpha=0.6, vmin=0.1)
+
+    # Aggiunge una barra colore per il deflusso superficiale
+    cbar = plt.colorbar(label="Deflusso Superficiale (mm)", fraction=0.046, pad=0.04)
+    cbar.set_label("Deflusso Superficiale (mm)", rotation=270, labelpad=15)
+
+    # Nasconde gli assi
+    plt.axis('off')
+    plt.show()
+    
+def sea_mask(input_tiff):
+    with rasterio.open(input_tiff) as src:
+        dem = src.read(1)  
+
+    mask = (dem > 0).astype(np.uint8) # 1 per la terraferma, 0 per il mare
+    
+    return mask
