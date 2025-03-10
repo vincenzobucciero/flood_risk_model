@@ -46,15 +46,15 @@ def main():
     # Calcolo del deflusso superficiale (Runoff)
     print("Calcolo del deflusso superficiale . . .")
     runoff = compute_runoff(reprojected_rainfall_data, cn_map, MASK)
-    plot_runoff_on_land_cover(cn_map, runoff)
-    # plot_territory_boundaries(cn_map, runoff)
+    # plot_runoff_on_land_cover(cn_map, runoff)
+    plot_territory_boundaries(dem_data, runoff)
     
     print("Calcolo del D8 . . .")
     calculate_flow_direction_parallel(dem_filepath, d8_filepath, MASK)
     
     flood_risk_map = compute_flood_risk(d8_filepath, runoff)
-    # visualize_flood_risk(flood_risk_map)
-    visualize_flood_risk_with_legend(flood_risk_map)
+    # visualize_flood_risk_with_legend(flood_risk_map)
+    visualize_flood_risk_with_legend(flood_risk_map, dem_data)
     
     print("Processo completato.")
 

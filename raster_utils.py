@@ -270,30 +270,70 @@ def classify_risk_levels(risk_map):
 
     return classified_map
 
-def visualize_flood_risk_with_legend(risk_map):
+# def visualize_flood_risk_with_legend(risk_map):
+#     """
+#     Visualizza la mappa del rischio alluvionale con una legenda che identifica le aree a rischio.
+    
+#     :param risk_map: Array numpy contenente i dati di rischio alluvionale.
+#     """
+#     classified_map = classify_risk_levels(risk_map)
+
+#     cmap = mcolors.ListedColormap(["green", "yellow", "orange", "red"])
+#     bounds = [1, 2, 3, 4, 5]  # Confini delle classi
+#     norm = mcolors.BoundaryNorm(bounds, cmap.N)
+
+#     plt.figure(figsize=(10, 6))
+#     img = plt.imshow(classified_map, cmap=cmap, norm=norm, interpolation="nearest")
+
+#     cbar = plt.colorbar(img, ticks=[1.5, 2.5, 3.5, 4.5])
+#     cbar.set_ticklabels(["Basso", "Medio", "Alto", "Critico"])
+#     cbar.set_label("Livello di Rischio di Alluvione", fontsize=12)
+
+#     plt.title("Mappa del Rischio Alluvionale", fontsize=14, fontweight="bold")
+#     plt.xlabel("Longitudine (pixel)", fontsize=12)
+#     plt.ylabel("Latitudine (pixel)", fontsize=12)
+
+#     plt.show()
+
+def visualize_flood_risk_with_legend(risk_map, background_map):
     """
     Visualizza la mappa del rischio alluvionale con una legenda che identifica le aree a rischio.
-    
+    Utilizza una mappa di sfondo in scala di grigi come riferimento geografico.
+
     :param risk_map: Array numpy contenente i dati di rischio alluvionale.
+    :param background_map: Array numpy contenente i dati di sfondo (ad esempio, land cover).
     """
+    # Classifica i livelli di rischio
     classified_map = classify_risk_levels(risk_map)
 
+    # Colormap per il rischio alluvionale
     cmap = mcolors.ListedColormap(["green", "yellow", "orange", "red"])
     bounds = [1, 2, 3, 4, 5]  # Confini delle classi
     norm = mcolors.BoundaryNorm(bounds, cmap.N)
 
+    # Visualizza la mappa di sfondo in scala di grigi
     plt.figure(figsize=(10, 6))
-    img = plt.imshow(classified_map, cmap=cmap, norm=norm, interpolation="nearest")
+    plt.imshow(background_map, cmap="gray", alpha=0.5, vmin=np.nanmin(background_map), vmax=np.nanmax(background_map))
 
+    # Sovrappone la mappa del rischio alluvionale
+    img = plt.imshow(classified_map, cmap=cmap, norm=norm, alpha=0.7, interpolation="nearest")
+
+    # Aggiunge la legenda
     cbar = plt.colorbar(img, ticks=[1.5, 2.5, 3.5, 4.5])
     cbar.set_ticklabels(["Basso", "Medio", "Alto", "Critico"])
     cbar.set_label("Livello di Rischio di Alluvione", fontsize=12)
 
+    # Titoli e etichette
     plt.title("Mappa del Rischio Alluvionale", fontsize=14, fontweight="bold")
     plt.xlabel("Longitudine (pixel)", fontsize=12)
     plt.ylabel("Latitudine (pixel)", fontsize=12)
 
+    # Nasconde gli assi
+    plt.axis('off')
     plt.show()
+
+
+
 
 def align_radar_to_dem(radar_tiff, dem_tiff, output_tiff):
     """
@@ -558,89 +598,44 @@ def plot_runoff_on_land_cover(land_cover_data, runoff_data, title="Deflusso Supe
     # Nasconde gli assi
     plt.axis('off')
     plt.show()
-    
-# def plot_runoff_on_land_cover(land_cover_data, runoff_data, title="Deflusso Superficiale su Land Cover"):
-#     """
-#     Visualizza il deflusso superficiale sovrapponendolo ai soli margini della land cover.
 
-#     args:
-#         land_cover_data (numpy.ndarray): Dati raster della land cover.
-#         runoff_data (numpy.ndarray): Dati del deflusso superficiale.
-#         title (str): Titolo della visualizzazione.
-
-#     returns:
-#         None
-#     """
-#     # Trova i margini della land cover con il filtro Sobel
-#     grad_x = sobel(land_cover_data, axis=0, mode='constant')
-#     grad_y = sobel(land_cover_data, axis=1, mode='constant')
-#     land_cover_edges = np.hypot(grad_x, grad_y)  # Calcola il gradiente
-
-#     # Imposta una soglia per evidenziare solo i contorni più marcati
-#     land_cover_edges = np.where(land_cover_edges > 0, 1, np.nan)
-
-#     # Assicura che il runoff non abbia valori negativi
-#     runoff_data = np.where(runoff_data < 0, 0, runoff_data)
-
-#     # Crea la figura
-#     plt.figure(figsize=(10, 8))
-#     plt.title(title)
-
-#     # Disegna solo i margini della land cover in nero
-#     plt.imshow(land_cover_edges, cmap="gray", alpha=1.0)
-
-#     # Sovrappone il deflusso superficiale
-#     cmap_runoff = plt.cm.Reds
-#     cmap_runoff.set_under(color='none')  # Non visualizza i valori bassi di runoff
-#     plt.imshow(runoff_data, cmap=cmap_runoff, alpha=0.6, vmin=0.1)
-
-#     # Aggiunge una barra colore per il deflusso superficiale
-#     cbar = plt.colorbar(label="Deflusso Superficiale (mm)", fraction=0.046, pad=0.04)
-#     cbar.set_label("Deflusso Superficiale (mm)", rotation=270, labelpad=15)
-
-#     # Nasconde gli assi
-#     plt.axis('off')
-#     plt.show()    
-
-def plot_territory_boundaries(land_cover_data, runoff_data, title="Confini del Territorio"):
+def plot_territory_boundaries(dem_data, runoff_data, title="Deflusso Superficiale su DEM"):
     """
-    Visualizza solo i confini del territorio senza dettagli interni.
+    Visualizza il deflusso superficiale sovrapponendolo a una mappa DEM.
+    Lo sfondo è il DEM in scala di grigi, mentre il deflusso è visualizzato in blu.
 
     args:
-        land_cover_data (numpy.ndarray): Dati raster della land cover.
+        dem_data (numpy.ndarray): Dati raster del DEM (Digital Elevation Model).
         runoff_data (numpy.ndarray): Dati del deflusso superficiale.
         title (str): Titolo della visualizzazione.
 
     returns:
         None
     """
-    # Crea una maschera binaria dell'area coperta (1 dove c'è territorio, 0 altrove)
-    territory_mask = land_cover_data > 0
-
-    # Trova solo il bordo esterno del territorio
-    territory_edges = territory_mask ^ binary_erosion(territory_mask)
-
-    # Assicura che il runoff non abbia valori negativi
-    runoff_data = np.where(runoff_data < 0, 0, runoff_data)
+    # Gestione dei valori NaN nel DEM e nel runoff
+    dem_data = np.where(dem_data <= 0, np.nan, dem_data)  # Gestione di valori non validi nel DEM
+    runoff_data = np.where(runoff_data < 0, 0, runoff_data)  # Assicura valori non negativi nel runoff
 
     # Crea la figura
     plt.figure(figsize=(10, 8))
-    plt.title(title)
+    plt.title(title, fontsize=14, fontweight="bold")
 
-    # Disegna solo i contorni del territorio con `plt.contour`
-    plt.contour(territory_edges, levels=[0.5], colors="white", linewidths=1.5)
+    # Visualizza il DEM come sfondo in scala di grigi
+    plt.imshow(dem_data, cmap="gray", alpha=0.3, vmin=np.nanmin(dem_data), vmax=np.nanmax(dem_data))
 
-    # Sovrappone il deflusso superficiale
-    cmap_runoff = plt.cm.Reds
+    # Sovrappone il deflusso superficiale in blu
+    cmap_runoff = plt.cm.Blues  # Usa una colormap in tonalità blu
     cmap_runoff.set_under(color='none')  # Non visualizza i valori bassi di runoff
-    plt.imshow(runoff_data, cmap=cmap_runoff, alpha=0.6, vmin=0.1)
+    plt.imshow(runoff_data, cmap=cmap_runoff, alpha=0.7, vmin=0.1)
 
     # Aggiunge una barra colore per il deflusso superficiale
     cbar = plt.colorbar(label="Deflusso Superficiale (mm)", fraction=0.046, pad=0.04)
-    cbar.set_label("Deflusso Superficiale (mm)", rotation=270, labelpad=15)
+    cbar.set_label("Deflusso Superficiale (mm)", rotation=270, labelpad=15, fontsize=12)
 
     # Nasconde gli assi
     plt.axis('off')
+
+    # Mostra la figura
     plt.show()
     
 def sea_mask(input_tiff):
