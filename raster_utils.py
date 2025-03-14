@@ -270,31 +270,6 @@ def classify_risk_levels(risk_map):
 
     return classified_map
 
-# def visualize_flood_risk_with_legend(risk_map):
-#     """
-#     Visualizza la mappa del rischio alluvionale con una legenda che identifica le aree a rischio.
-    
-#     :param risk_map: Array numpy contenente i dati di rischio alluvionale.
-#     """
-#     classified_map = classify_risk_levels(risk_map)
-
-#     cmap = mcolors.ListedColormap(["green", "yellow", "orange", "red"])
-#     bounds = [1, 2, 3, 4, 5]  # Confini delle classi
-#     norm = mcolors.BoundaryNorm(bounds, cmap.N)
-
-#     plt.figure(figsize=(10, 6))
-#     img = plt.imshow(classified_map, cmap=cmap, norm=norm, interpolation="nearest")
-
-#     cbar = plt.colorbar(img, ticks=[1.5, 2.5, 3.5, 4.5])
-#     cbar.set_ticklabels(["Basso", "Medio", "Alto", "Critico"])
-#     cbar.set_label("Livello di Rischio di Alluvione", fontsize=12)
-
-#     plt.title("Mappa del Rischio Alluvionale", fontsize=14, fontweight="bold")
-#     plt.xlabel("Longitudine (pixel)", fontsize=12)
-#     plt.ylabel("Latitudine (pixel)", fontsize=12)
-
-#     plt.show()
-
 def visualize_flood_risk_with_legend(risk_map, background_map):
     """
     Visualizza la mappa del rischio alluvionale con una legenda che identifica le aree a rischio.
@@ -331,9 +306,6 @@ def visualize_flood_risk_with_legend(risk_map, background_map):
     # Nasconde gli assi
     plt.axis('off')
     plt.show()
-
-
-
 
 def align_radar_to_dem(radar_tiff, dem_tiff, output_tiff):
     """
@@ -405,46 +377,6 @@ def align_radar_to_dem(radar_tiff, dem_tiff, output_tiff):
 
     print(f"✅ File radar allineato salvato in: {output_tiff}")
      
-# def align_radar_to_dem(radar_tiff, dem_tiff, output_radar_tiff):
-#     """
-#     Riproietta e riallinea un file radar al DEM senza distorsioni.
-
-#     :param radar_tiff: Percorso del file TIFF del radar.
-#     :param dem_tiff: Percorso del file TIFF del DEM.
-#     :param output_radar_tiff: Percorso del file TIFF risultante dopo l'allineamento.
-#     """
-#     with rasterio.open(dem_tiff) as dem:
-#         dem_crs = dem.crs
-#         dem_transform = dem.transform
-#         dem_width = dem.width
-#         dem_height = dem.height
-#         dem_bounds = dem.bounds
-#         dem_resolution_x = dem_transform[0]  
-#         dem_resolution_y = -dem_transform[4]  
-
-#     with rasterio.open(radar_tiff) as radar:
-#         radar_crs = radar.crs
-
-#         print(f"CRS DEM: {dem_crs}, CRS Radar: {radar_crs}")
-#         print(f"DEM Risoluzione: {dem_resolution_x}, {dem_resolution_y}")
-
-#         if radar_crs != dem_crs:
-#             print("⚠️ ATTENZIONE: Il CRS del radar è diverso da quello del DEM. Viene effettuata la conversione.")
-
-#     options = gdal.WarpOptions(
-#         format = "GTiff",
-#         dstSRS = str(dem_crs),
-#         xRes = dem_resolution_x,  
-#         yRes = dem_resolution_y,  
-#         width = dem_width,  
-#         height = dem_height, 
-#         outputBounds = [dem_bounds.left, dem_bounds.bottom, dem_bounds.right, dem_bounds.top],
-#         resampleAlg = gdal.GRA_Cubic  
-#     )
-
-#     gdal.Warp(output_radar_tiff, radar_tiff, options=options)
-#     print(f"✅ File radar riallineato salvato in: {output_radar_tiff}") 
-    
 def crop_tiff_to_campania(input_tiff, output_tiff):
     """
     Esegue il cropping di un file TIFF sull'area della Campania.
@@ -475,68 +407,6 @@ def crop_tiff_to_campania(input_tiff, output_tiff):
     except Exception as e:
         print(f"Errore durante il cropping: {e}")
 
-# da cancellare questa funzione sotto perchè non utilizzata.
-def process_tiff(input_tiff, bbox=None, tile_width=0.01, tile_height=0.01, output_dir="data/"):
-    """
-    Processa un file TIFF: lo croppa in base a un bbox e lo suddivide in tile.
-
-    :param input_tiff: Percorso del file TIFF di input.
-    :param bbox: Bounding box specificato come {"min_x", "max_x", "min_y", "max_y"}.
-                 Se None, verrà usato un bbox di default.
-    :param tile_width: Larghezza del tile in gradi decimali (default: 0.01).
-    :param tile_height: Altezza del tile in gradi decimali (default: 0.01).
-    :param output_dir: Cartella di output per i tile generati.
-    """
-    # Definisci un bbox di default se non viene fornito
-    if bbox is None:
-        bbox = { # solofra
-            "min_x": 14.8101704568,
-            "max_x": 14.880832918,
-            "min_y": 40.7967829884,
-            "max_y": 40.8585629063
-        }
-
-    # Crea la cartella di output se non esiste
-    os.makedirs(output_dir, exist_ok=True)
-
-    # Calcola il numero di tile necessari
-    num_tiles_x = int(np.ceil((bbox["max_x"] - bbox["min_x"]) / tile_width))
-    num_tiles_y = int(np.ceil((bbox["max_y"] - bbox["min_y"]) / tile_height))
-
-    # Step 1: Crop the TIFF based on the bbox
-    cropped_file = os.path.join(output_dir, "cropped.tif")
-    try:
-        gdal.Translate(
-            cropped_file,
-            input_tiff,
-            projWin=[bbox["min_x"], bbox["max_y"], bbox["max_x"], bbox["min_y"]]
-        )
-        print(f"Cropping completato. File salvato in: {cropped_file}")
-    except Exception as e:
-        print(f"Errore durante il cropping: {e}")
-        return
-
-    # Step 2: Generate tiles from the cropped TIFF
-    for tile_x in range(num_tiles_x):
-        for tile_y in range(num_tiles_y):
-            tile_min_x = bbox["min_x"] + tile_x * tile_width
-            tile_max_x = min(tile_min_x + tile_width, bbox["max_x"])
-            tile_min_y = bbox["min_y"] + tile_y * tile_height
-            tile_max_y = min(tile_min_y + tile_height, bbox["max_y"])
-
-            tile_filename = os.path.join(output_dir, f"tiles/tile_{tile_x}_{tile_y}.tiff")
-            try:
-                gdal.Translate(
-                    tile_filename,
-                    cropped_file,
-                    projWin=[tile_min_x, tile_max_y, tile_max_x, tile_min_y]
-                )
-                print(f"Tile generato: {tile_filename}")
-            except Exception as e:
-                print(f"Errore durante la generazione del tile ({tile_x}, {tile_y}): {e}")
-
-    print("Processo completato. Tutti i tile sono stati generati con successo.")
-    
 def visualize_combined(dem_data, radar_original_data, radar_reprojected_data):
     fig, axes = plt.subplots(1, 3, figsize=(24, 8))
     
