@@ -7,35 +7,7 @@ from scipy.ndimage import gaussian_filter
 from raster_utils import sea_mask
 from tempfile import NamedTemporaryFile
 from raster_utils import crop_tiff_to_campania, align_radar_to_dem
-
-# def compute_runoff(precipitation, cn_map, mask):
-#     """
-#     Calcola il deflusso superficiale basato sul metodo SCS-CN.
-    
-#     :param precipitation: Array numpy contenente i dati di precipitazione.
-#     :param cn_map: Array numpy contenente la mappa Curve Number.
-#     :return: Array numpy contenente il deflusso superficiale (Runoff).
-#     """
-#     cn_map = np.where(cn_map <= 0 | (mask == 0), 1e-6, cn_map)  # Evita divisione per zero
-    
-#     # Calcola la capacità di ritenzione S
-#     S = (1000 / cn_map) - 10
-#     S = np.where(S < 0, 0, S)  
-    
-#     # Gestione dei valori NaN o negativi nella precipitazione
-#     precipitation = np.where(precipitation <= 0, 0, precipitation)
-    
-#     # Calcola il deflusso superficiale
-#     runoff = np.zeros_like(precipitation, dtype=np.float32)
-#     valid_mask = precipitation > 0.2 * S  # Maschera per le celle valide
-    
-#     # Evita divisioni per zero
-#     denominator = precipitation + 0.8 * S
-#     denominator = np.where(denominator == 0, 1e-6, denominator)  # Evita divisione per zero
-    
-#     runoff[valid_mask] = ((precipitation[valid_mask] - 0.2 * S[valid_mask]) ** 2) / denominator[valid_mask]
-    
-#     return runoff
+from termcolor import colored
 
 def compute_runoff(precipitation, cn_map, mask):
     """"
@@ -121,12 +93,6 @@ def calculate_flow_direction_parallel(tiff_path, output_path, mask):
             for window, result in results:
                 dst.write(result, 1, window=window)     
                     
-# def calculate_flood_risk(d8_filepath, runoff):
-#     with rasterio.open(d8_filepath) as d8_src:
-#         d8_flow = d8_src.read(1)
-#     flood_risk_map = d8_flow * runoff
-#     return flood_risk_map
-
 def normalize(array):
     """Normalizza un array tra 0 e 1."""
     return (array - np.min(array)) / (np.max(array) - np.min(array) + 1e-6)
@@ -150,26 +116,6 @@ def visualize_flood_risk(flood_risk_map, mask):
     plt.title("Flood Risk Map")
     plt.show()
   
-# def compute_flood_risk(runoff, flow_direction):
-#     """
-#     Combina runoff e direzione del flusso per creare una mappa di rischio alluvionale.
-    
-#     :param runoff: Array numpy con il deflusso superficiale normalizzato.
-#     :param flow_direction: Array numpy con la direzione del flusso normalizzata.
-#     :return: Mappa del rischio alluvionale.
-#     """
-#     runoff_norm = normalize(runoff)
-#     flow_norm = normalize(flow_direction)
-    
-#     # Ponderazione: il runoff pesa di più rispetto alla direzione del flusso
-#     risk_map = (0.7 * runoff_norm) + (0.3 * flow_norm)
-    
-#     # Applica un filtro gaussiano per rendere la mappa più fluida
-#     risk_map = gaussian_filter(risk_map, sigma=2)
-    
-#     return risk_map
-
-
 def get_radar_files(directory):
     """
     Restituisce una lista di percorsi completi dei file TIFF nella directory specificata.
@@ -177,43 +123,48 @@ def get_radar_files(directory):
     return [os.path.join(directory, f) for f in os.listdir(directory) if f.endswith('.tiff')]
 
 def process_tiff(file, cn_map, mask):
-     """
-     Elabora un file TIFF per calcolare il runoff.
-     """
-     with rasterio.open(file) as src:
-         precipitation = src.read(1)
-         runoff = compute_runoff(precipitation, cn_map, mask)
-     return runoff
-
-# def calculate_accumulated_runoff(radar_directory, cn_map, mask, output_path):
-#     """
-#     Calcola il runoff accumulato su più file radar.
-#     """
-#     accumulated_runoff = None
-    
-#     radar_files = get_radar_files(radar_directory)
-    
-#     for file in radar_files:
-#         if not os.path.exists(file):
-#             print(f"File non trovato: {file}")
-#             continue
+    """
+    Elabora un file TIFF per calcolare il runoff.
+    """
+    with rasterio.open(file) as src:
+        precipitation = src.read(1)
         
-#         runoff = process_tiff(file, cn_map, mask)
+        # Leggi il valore nodata dai metadati
+        nodata = src.nodata
+        print(f"Valore nodata dichiarato nel file {file}: {nodata}")
         
-#         if accumulated_runoff is None:
-#             accumulated_runoff = np.zeros_like(runoff)
+        # Sostituisci i valori nodata con 0, usando una tolleranza
+        if nodata is not None:
+            tolerance = 1e-1  # Aumentiamo la tolleranza per gestire piccole variazioni
+            precipitation = np.where(
+                np.isclose(precipitation, nodata, atol=tolerance),
+                0,
+                precipitation
+            )
         
-#         accumulated_runoff += runoff
+        # Verifica la presenza di valori negativi o anomali
+        if np.any(precipitation < 0):
+            print("⚠️ Attenzione: Rilevati valori negativi nella precipitazione.")
+            precipitation[precipitation < 0] = 0  # Forza i valori negativi a 0
+        
+        # Verifica la presenza di valori validi
+        if np.max(precipitation) <= 0:
+            print("⚠️ Attenzione: Nessun valore valido di precipitazione trovato.")
+        
+        print(f"Valori di precipitazione (dopo la correzione): Min={np.min(precipitation)}, Max={np.max(precipitation)}, Media={np.mean(precipitation)}")
+        
+        # Calcola il runoff
+        runoff = compute_runoff(precipitation, cn_map, mask)
     
-#     if accumulated_runoff is not None:
-#         with rasterio.open(radar_files[0]) as src:
-#             profile = src.profile.copy()
-#             profile.update(dtype=rasterio.float32, count=1)
-        
-#         with rasterio.open(output_path, 'w', **profile) as dst:
-#             dst.write(accumulated_runoff, 1)
+    # Sostituisci NaN con 0
+    runoff = np.nan_to_num(runoff, nan=0.0)
     
-#     return accumulated_runoff
+    # Verifica ulteriore per valori negativi nel runoff
+    if np.any(runoff < 0):
+        print("⚠️ Attenzione: Rilevati valori negativi nel runoff.")
+        runoff[runoff < 0] = 0  # Forza i valori negativi a 0
+    
+    return runoff
 
 def process_radar_file(file, cn_map, mask, dem_tiff):
     """
@@ -259,6 +210,9 @@ def calculate_accumulated_runoff(radar_directory, cn_map, mask, dem_tiff, output
     # Ottieni la lista dei file radar
     radar_files = get_radar_files(radar_directory)
     
+    # Lista per memorizzare i runoff intermedi
+    individual_runoffs = []
+
     for file in radar_files:
         if not os.path.exists(file):
             print(f"File non trovato: {file}")
@@ -270,18 +224,37 @@ def calculate_accumulated_runoff(radar_directory, cn_map, mask, dem_tiff, output
             print(f"Errore nel processamento del file: {file}")
             continue
         
+        # Salva il runoff individuale
+        individual_runoffs.append(runoff)
+        
         # Aggiorna il runoff accumulato
         if accumulated_runoff is None:
             accumulated_runoff = np.zeros_like(runoff)
+        elif runoff.shape != accumulated_runoff.shape:
+            print(f"Errore: Dimensioni incompatibili tra runoff ({runoff.shape}) e accumulated_runoff ({accumulated_runoff.shape})")
+            return None
+        
         accumulated_runoff += runoff
+        print(colored(f"Runoff calcolato con successo per il file: {file}", "green"))
     
-    # Salva il risultato finale
+    # Mostra i runoff intermedi
+    print("\n--- Runoff intermedi ---")
+    for i, runoff in enumerate(individual_runoffs):
+        print(f"Runoff del file {i+1}: Min={np.min(runoff)}, Max={np.max(runoff)}, Media={np.mean(runoff)}")
+    
+    # Mostra il runoff accumulato
     if accumulated_runoff is not None:
+        print("\n--- Runoff accumulato ---")
+        print(f"Min={np.min(accumulated_runoff)}, Max={np.max(accumulated_runoff)}, Media={np.mean(accumulated_runoff)}")
+        
+        # Salva il risultato finale
         with rasterio.open(radar_files[0]) as src:
             profile = src.profile.copy()
             profile.update(dtype=rasterio.float32, count=1)
         
         with rasterio.open(output_path, 'w', **profile) as dst:
             dst.write(accumulated_runoff, 1)
+        
+        print(f"\nFile runoff accumulato salvato in: {output_path}")
     
     return accumulated_runoff

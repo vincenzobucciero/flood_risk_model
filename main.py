@@ -22,13 +22,13 @@ def main():
     print(colored("Caricamento dei dati radar...", "green"))
     radar_data, radar_profile = latlon_load_and_plot_rainfall(config.RADAR_CAMPANIA)
     
-    # Ricalibrazione del raster radar
-    print(colored("Ricalibrazione del raster radar in corso...", "yellow"))
-    align_radar_to_dem(config.RADAR_CAMPANIA, config.DEM_FILEPATH, config.REPROJECTED_RADAR_FILEPATH)
+    # # Ricalibrazione del raster radar
+    # print(colored("Ricalibrazione del raster radar in corso...", "yellow"))
+    # align_radar_to_dem(config.RADAR_CAMPANIA, config.DEM_FILEPATH, config.REPROJECTED_RADAR_FILEPATH)
     
-    # Caricamento radar ricalibrato
-    print(colored("Caricamento del radar ricalibrato...", "green"))
-    reprojected_rainfall_data, _ = latlon_load_and_plot_rainfall(config.REPROJECTED_RADAR_FILEPATH, "Radar - Ricalibrato su DEM")
+    # # Caricamento radar ricalibrato
+    # print(colored("Caricamento del radar ricalibrato...", "green"))
+    # reprojected_rainfall_data, _ = latlon_load_and_plot_rainfall(config.REPROJECTED_RADAR_FILEPATH, "Radar - Ricalibrato su DEM")
     
     # Riallineamento della mappa CN al DEM
     print(colored("Riallineamento della mappa Curve Number al DEM...", "green"))
@@ -40,7 +40,8 @@ def main():
     
     # Calcolo del deflusso superficiale (Runoff)
     print(colored("Calcolo del deflusso superficiale...", "blue"))
-    runoff = compute_runoff(reprojected_rainfall_data, cn_map, MASK)
+    # runoff = compute_runoff(reprojected_rainfall_data, cn_map, MASK)
+    runoff = calculate_accumulated_runoff("data/radar/2025/03/12", cn_map, MASK, config.DEM_FILEPATH, "runoff.tiff")
     plot_territory_boundaries(dem_data, runoff)
     
     print(colored("Calcolo della direzione del flusso D8...", "blue"))
