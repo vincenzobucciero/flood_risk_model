@@ -10,7 +10,7 @@ Questo repository contiene un modello per la valutazione del rischio di alluvion
  ├── main.py               # Script principale per eseguire il modello
  ├── raster_utils.py       # Funzioni per la gestione e analisi dei dati raster
  ├── hydrology.py          # Modulo per calcoli idrologici e modellazione
- ├── alert_system.py       # Sistema di allerta basato sui risultati del modello
+ ├── alert_system.py       # Sistema di allerta basato sui risultati del modello [al momento non utilizzato , future implementazioni ]
  ├── data/                 # Cartella contenente i dati di input
  │   ├── dem.tif           # Modello digitale di elevazione (DEM)
  │   ├── radar.tif         # Dati radar grezzi
@@ -48,7 +48,13 @@ Per configurare l'ambiente ed installare tutte le dipendenze necessarie.
    pip install -r requirements.txt
    pip install richdem
    ```
-5. Esecuzione del Modello
+5. Configurazione delle credenziali
+   Per utilizzare questo progetto, è necessario configurare le credenziali come variabili d'ambiente. Esegui i seguenti comandi nel terminale:
+   ```bash
+   export CLIENT_SECRET=" ... "
+   export CLIENT_ID=" ... "
+   ```
+7. Esecuzione del modello
    
    ```bash
    python main.py
