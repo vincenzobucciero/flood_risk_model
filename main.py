@@ -41,7 +41,8 @@ def main():
     # Calcolo del deflusso superficiale (Runoff)
     print(colored("Calcolo del deflusso superficiale...", "blue"))
     # runoff = compute_runoff(reprojected_rainfall_data, cn_map, MASK)
-    runoff = calculate_accumulated_runoff("data/radar/2025/03/12", cn_map, MASK, config.DEM_FILEPATH, "runoff.tiff")
+    # runoff = calculate_accumulated_runoff("data/radar/2025/03/17", cn_map, MASK, config.DEM_FILEPATH, "runoff.tiff")
+    runoff = calculate_accumulated_runoff("data/radar/2025/03/17", cn_map, MASK, config.DEM_FILEPATH, "runoff", output_format="netcdf")
     plot_territory_boundaries(dem_data, runoff)
     
     print(colored("Calcolo della direzione del flusso D8...", "blue"))

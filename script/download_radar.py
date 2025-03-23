@@ -44,6 +44,6 @@ def process_radar():
     base_url = "http://193.205.230.6/rdr0/"
     year = 2025
     month = 3
-    day = 12
+    day = 17
 
     download_tiff_files(base_url, year, month, day)

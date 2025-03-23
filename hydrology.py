@@ -8,6 +8,9 @@ from raster_utils import sea_mask
 from tempfile import NamedTemporaryFile
 from raster_utils import crop_tiff_to_campania, align_radar_to_dem
 from termcolor import colored
+from netCDF4 import Dataset
+import xarray as xr
+import time
 
 def compute_runoff(precipitation, cn_map, mask):
     """"
@@ -30,7 +33,7 @@ def compute_runoff(precipitation, cn_map, mask):
         precipitation[valid_mask] + 0.8 * S[valid_mask] + 1e-6)
     
     return runoff * mask
-  
+
 # calcolo D8
 D8_OFFSETS = [(-1, -1), (-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0), (1, -1), (0, -1)]
 D8_VALUES = [128, 1, 2, 4, 8, 16, 32, 64]
@@ -201,16 +204,82 @@ def process_radar_file(file, cn_map, mask, dem_tiff):
 
     return runoff
 
-def calculate_accumulated_runoff(radar_directory, cn_map, mask, dem_tiff, output_path):
+# def calculate_accumulated_runoff(radar_directory, cn_map, mask, dem_tiff, output_path):
+#     """
+#     Calcola il runoff accumulato su più file radar, dopo averli croppati e allineati.
+#     """
+#     accumulated_runoff = None
+    
+#     # Ottieni la lista dei file radar
+#     radar_files = get_radar_files(radar_directory)
+    
+#     # Lista per memorizzare i runoff intermedi
+#     individual_runoffs = []
+
+#     for file in radar_files:
+#         if not os.path.exists(file):
+#             print(f"File non trovato: {file}")
+#             continue
+        
+#         # Processa il file radar
+#         runoff = process_radar_file(file, cn_map, mask, dem_tiff)
+#         if runoff is None:
+#             print(f"Errore nel processamento del file: {file}")
+#             continue
+        
+#         # Salva il runoff individuale
+#         individual_runoffs.append(runoff)
+        
+#         # Aggiorna il runoff accumulato
+#         if accumulated_runoff is None:
+#             accumulated_runoff = np.zeros_like(runoff)
+#         elif runoff.shape != accumulated_runoff.shape:
+#             print(f"Errore: Dimensioni incompatibili tra runoff ({runoff.shape}) e accumulated_runoff ({accumulated_runoff.shape})")
+#             return None
+        
+#         accumulated_runoff += runoff
+#         print(colored(f"Runoff calcolato con successo per il file: {file}", "green"))
+    
+#     # Mostra i runoff intermedi
+#     print("\n--- Runoff intermedi ---")
+#     for i, runoff in enumerate(individual_runoffs):
+#         print(f"Runoff del file {i+1}: Min={np.min(runoff)}, Max={np.max(runoff)}, Media={np.mean(runoff)}")
+    
+#     # Mostra il runoff accumulato
+#     if accumulated_runoff is not None:
+#         print("\n--- Runoff accumulato ---")
+#         print(f"Min={np.min(accumulated_runoff)}, Max={np.max(accumulated_runoff)}, Media={np.mean(accumulated_runoff)}")
+        
+#         # Salva il risultato finale
+#         with rasterio.open(radar_files[0]) as src:
+#             profile = src.profile.copy()
+#             profile.update(dtype=rasterio.float32, count=1)
+        
+#         with rasterio.open(output_path, 'w', **profile) as dst:
+#             dst.write(accumulated_runoff, 1)
+        
+#         print(f"\nFile runoff accumulato salvato in: {output_path}")
+    
+#     return accumulated_runoff
+
+def calculate_accumulated_runoff(radar_directory, cn_map, mask, dem_tiff, output_path, output_format="tiff"):
     """
     Calcola il runoff accumulato su più file radar, dopo averli croppati e allineati.
+    Permette di salvare il risultato in formato TIFF o NetCDF a seconda del parametro 'output_format'.
+    
+    Parametri:
+    - radar_directory: Cartella contenente i file radar
+    - cn_map: Mappa Curve Number
+    - mask: Maschera
+    - dem_tiff: Modello digitale di elevazione (DEM)
+    - output_path: Percorso di output (senza estensione)
+    - output_format: Formato di output ("tiff" o "netcdf")
+    
+    Ritorna:
+    - L'array numpy del runoff accumulato
     """
     accumulated_runoff = None
-    
-    # Ottieni la lista dei file radar
     radar_files = get_radar_files(radar_directory)
-    
-    # Lista per memorizzare i runoff intermedi
     individual_runoffs = []
 
     for file in radar_files:
@@ -218,18 +287,15 @@ def calculate_accumulated_runoff(radar_directory, cn_map, mask, dem_tiff, output
             print(f"File non trovato: {file}")
             continue
         
-        # Processa il file radar
         runoff = process_radar_file(file, cn_map, mask, dem_tiff)
         if runoff is None:
             print(f"Errore nel processamento del file: {file}")
             continue
         
-        # Salva il runoff individuale
         individual_runoffs.append(runoff)
         
-        # Aggiorna il runoff accumulato
         if accumulated_runoff is None:
-            accumulated_runoff = np.zeros_like(runoff)
+            accumulated_runoff = np.zeros_like(runoff, dtype=np.float32)
         elif runoff.shape != accumulated_runoff.shape:
             print(f"Errore: Dimensioni incompatibili tra runoff ({runoff.shape}) e accumulated_runoff ({accumulated_runoff.shape})")
             return None
@@ -237,24 +303,73 @@ def calculate_accumulated_runoff(radar_directory, cn_map, mask, dem_tiff, output
         accumulated_runoff += runoff
         print(colored(f"Runoff calcolato con successo per il file: {file}", "green"))
     
-    # Mostra i runoff intermedi
+    # Mostra statistiche
     print("\n--- Runoff intermedi ---")
     for i, runoff in enumerate(individual_runoffs):
         print(f"Runoff del file {i+1}: Min={np.min(runoff)}, Max={np.max(runoff)}, Media={np.mean(runoff)}")
-    
-    # Mostra il runoff accumulato
+
     if accumulated_runoff is not None:
         print("\n--- Runoff accumulato ---")
         print(f"Min={np.min(accumulated_runoff)}, Max={np.max(accumulated_runoff)}, Media={np.mean(accumulated_runoff)}")
+
+        if output_format.lower() == "tiff":
+            save_as_tiff(accumulated_runoff, output_path + ".tif", radar_files[0])
+        elif output_format.lower() == "netcdf":
+            save_as_netcdf(accumulated_runoff, output_path + ".nc", radar_files[0])
+        else:
+            print("Formato non supportato. Usa 'tiff' o 'netcdf'.")
+            return None
         
-        # Salva il risultato finale
-        with rasterio.open(radar_files[0]) as src:
-            profile = src.profile.copy()
-            profile.update(dtype=rasterio.float32, count=1)
-        
-        with rasterio.open(output_path, 'w', **profile) as dst:
-            dst.write(accumulated_runoff, 1)
-        
-        print(f"\nFile runoff accumulato salvato in: {output_path}")
+        print(f"\nFile runoff accumulato salvato in: {output_path}.{output_format.lower()}")
     
     return accumulated_runoff
+
+def save_as_tiff(data, output_path, reference_file):
+    """
+    Salva un array NumPy come file TIFF, copiando il profilo da un file di riferimento.
+    """
+    with rasterio.open(reference_file) as src:
+        profile = src.profile.copy()
+        profile.update(dtype=rasterio.float32, count=1)
+    
+    with rasterio.open(output_path, 'w', **profile) as dst:
+        dst.write(data, 1)
+
+def save_as_netcdf(data, output_path, reference_file):
+    """
+    Salva un array NumPy come file NetCDF (.nc), includendo latitudine e longitudine.
+    """
+    nrows, ncols = data.shape
+    
+    # Ottieni la georeferenziazione dal file di riferimento
+    with rasterio.open(reference_file) as src:
+        transform = src.transform
+        x_min, y_max = transform * (0, 0)  # Coordinate del pixel in alto a sinistra
+        x_max, y_min = transform * (ncols, nrows)  # Coordinate del pixel in basso a destra
+        res_x, res_y = transform.a, -transform.e  # Risoluzione dei pixel
+
+    # Creiamo i vettori latitudine e longitudine
+    lon = np.linspace(x_min, x_max, ncols)
+    lat = np.linspace(y_max, y_min, nrows)
+
+    with Dataset(output_path, "w", format="NETCDF4") as nc:
+        # Crea le dimensioni
+        nc.createDimension("y", nrows)
+        nc.createDimension("x", ncols)
+
+        # Crea le variabili di latitudine e longitudine
+        lat_var = nc.createVariable("latitude", "f4", ("y",))
+        lon_var = nc.createVariable("longitude", "f4", ("x",))
+
+        lat_var.units = "degrees_north"
+        lon_var.units = "degrees_east"
+
+        lat_var[:] = lat
+        lon_var[:] = lon
+
+        # Crea la variabile runoff
+        runoff_var = nc.createVariable("runoff", "f4", ("y", "x"))
+        runoff_var.units = "mm"  # Unità di misura personalizzabile
+
+        # Scrivi i dati
+        runoff_var[:, :] = data
