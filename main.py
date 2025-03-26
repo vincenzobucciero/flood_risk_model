@@ -28,7 +28,7 @@ def main():
     
     # # Caricamento radar ricalibrato
     # print(colored("Caricamento del radar ricalibrato...", "green"))
-    # reprojected_rainfall_data, _ = latlon_load_and_plot_rainfall(config.REPROJECTED_RADAR_FILEPATH, "Radar - Ricalibrato su DEM")
+    # reprojected_rainfall_data, _ = latlon_load_and_plot_rainfall(config.REPROJECTED_RADAR_FILEPATH, "Radar - Ricalibrato su DEM")
     
     # Riallineamento della mappa CN al DEM
     print(colored("Riallineamento della mappa Curve Number al DEM...", "green"))
@@ -47,6 +47,7 @@ def main():
     
     print(colored("Calcolo della direzione del flusso D8...", "blue"))
     calculate_flow_direction_parallel(config.DEM_FILEPATH, config.D8_FILEPATH, MASK)
+    scalability_test(config.DEM_FILEPATH, config.D8_FILEPATH, MASK)
     
     flood_risk_map = compute_flood_risk(config.D8_FILEPATH, runoff)
     visualize_flood_risk_with_legend(flood_risk_map, dem_data)

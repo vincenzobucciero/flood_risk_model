@@ -82,6 +82,8 @@ def calculate_flow_direction_parallel(tiff_path, output_path, mask):
     """
     Calcola la direzione del flusso D8 in parallelo.
     """
+    start_time = time.time()
+    
     with rasterio.open(tiff_path) as src:
         profile = src.profile.copy()
         profile.update(dtype=rasterio.uint8)
@@ -94,7 +96,45 @@ def calculate_flow_direction_parallel(tiff_path, output_path, mask):
 
         with rasterio.open(output_path, 'w', **profile) as dst:
             for window, result in results:
-                dst.write(result, 1, window=window)     
+                dst.write(result, 1, window=window)    
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    
+    with open("scalability_test.txt", "a") as log:
+        log.write(f"Calcolo direzione del flusso: {elapsed_time:.2f} secondi\n")
+    print(f"Calcolo direzione del flusso completato in {elapsed_time:.2f} secondi")
+    
+def scalability_test(tiff_path, output_path, mask, max_cpus=16, log_file="scalability_test.txt"):
+    """
+    Testa la scalabilità del calcolo della direzione del flusso variando il numero di CPU.
+    """
+    with open(log_file, "w") as log:
+        log.write("Scalability Test: Testing with varying numbers of CPUs.\n")
+    
+    for cpus in range(1, max_cpus + 1):
+        start_time = time.time()
+        with Pool(cpus) as pool:
+            # Ripeti l'operazione per testare la scalabilità con differenti CPU
+            with rasterio.open(tiff_path) as src:
+                profile = src.profile.copy()
+                profile.update(dtype=rasterio.uint8)
+
+                windows = [window for _, window in src.block_windows()]
+                data = [src.read(1, window=window) for window in windows]
+
+                results = pool.map(process_window, zip(windows, data, [mask] * len(windows)))
+
+                with rasterio.open(output_path, 'w', **profile) as dst:
+                    for window, result in results:
+                        dst.write(result, 1, window=window)
+
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+
+        with open(log_file, "a") as log:
+            log.write(f"Using {cpus} CPUs: {elapsed_time:.2f} seconds\n")
+        
+        print(f"Using {cpus} CPUs: {elapsed_time:.2f} seconds")
                     
 def normalize(array):
     """Normalizza un array tra 0 e 1."""
