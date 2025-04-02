@@ -4,7 +4,7 @@ from .download_radar import process_radar
 
 def main():
     process_dem()
-    # process_glc()
+    process_glc()
     # process_radar()
 
 if __name__ == "__main__":

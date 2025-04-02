@@ -11,6 +11,8 @@ from termcolor import colored
 from netCDF4 import Dataset
 import xarray as xr
 import time
+from mpi4py import MPI
+import subprocess
 
 def compute_runoff(precipitation, cn_map, mask):
     """"
@@ -34,108 +36,111 @@ def compute_runoff(precipitation, cn_map, mask):
     
     return runoff * mask
 
-# calcolo D8
-D8_OFFSETS = [(-1, -1), (-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0), (1, -1), (0, -1)]
-D8_VALUES = [128, 1, 2, 4, 8, 16, 32, 64]
-
-def calculate_flow_direction(window_data, mask):
-    """
-    Calcola la direzione del flusso usando il metodo D8.
-    """
-    rows, cols = window_data.shape
-    flow_dir = np.zeros_like(window_data, dtype=np.uint8)
-
-    for r in range(1, rows - 1):
-        for c in range(1, cols - 1):
-            if mask[r, c] == 0:  # Se è mare, salta il calcolo
-                continue  
-
-            center = window_data[r, c]
-            if np.isnan(center):
-                continue
-
-            min_diff = float("inf")
-            min_dir = 0
-
-            for i, (dr, dc) in enumerate(D8_OFFSETS):
-                neighbor = window_data[r + dr, c + dc]
-                
-                # Considera solo celle sulla terraferma
-                if not np.isnan(neighbor) and mask[r + dr, c + dc] == 1:
-                    diff = center - neighbor
-                    if diff > 0 and diff < min_diff:
-                        min_diff = diff
-                        min_dir = D8_VALUES[i]
-
-            flow_dir[r, c] = min_dir  
-
-    return flow_dir[1:-1, 1:-1]  
-
-def process_window(args):
-    """
-    Wrapper per parallelizzare il calcolo della direzione del flusso.
-    """
-    window, data, mask = args
-    return (window, calculate_flow_direction(data, mask))
-
-def calculate_flow_direction_parallel(tiff_path, output_path, mask):
-    """
-    Calcola la direzione del flusso D8 in parallelo.
-    """
-    start_time = time.time()
+def add_ghost_cells(dem):
+    rows, cols = dem.shape
+    local_dem = np.zeros((rows + 2, cols + 2))
+    local_dem[1:-1, 1:-1] = dem
     
-    with rasterio.open(tiff_path) as src:
-        profile = src.profile.copy()
-        profile.update(dtype=rasterio.uint8)
+    return local_dem
 
-        windows = [window for _, window in src.block_windows()]
-        data = [src.read(1, window=window) for window in windows]
-
-        with Pool(cpu_count()) as pool:
-            results = pool.map(process_window, zip(windows, data, [mask]*len(windows)))
-
-        with rasterio.open(output_path, 'w', **profile) as dst:
-            for window, result in results:
-                dst.write(result, 1, window=window)    
-    end_time = time.time()
-    elapsed_time = end_time - start_time
+def exchange_ghost_cells(local_matrix, rank, size, num_block):
+    comm = MPI.COMM_WORLD
+    up, down, left, right = rank - num_block, rank + num_block, rank - 1, rank + 1
     
-    with open("scalability_test.txt", "a") as log:
-        log.write(f"Calcolo direzione del flusso: {elapsed_time:.2f} secondi\n")
-    print(f"Calcolo direzione del flusso completato in {elapsed_time:.2f} secondi")
-    
-def scalability_test(tiff_path, output_path, mask, max_cpus=16, log_file="scalability_test.txt"):
-    """
-    Testa la scalabilità del calcolo della direzione del flusso variando il numero di CPU.
-    """
-    with open(log_file, "w") as log:
-        log.write("Scalability Test: Testing with varying numbers of CPUs.\n")
-    
-    for cpus in range(1, max_cpus + 1):
-        start_time = time.time()
-        with Pool(cpus) as pool:
-            # Ripeti l'operazione per testare la scalabilità con differenti CPU
-            with rasterio.open(tiff_path) as src:
-                profile = src.profile.copy()
-                profile.update(dtype=rasterio.uint8)
-
-                windows = [window for _, window in src.block_windows()]
-                data = [src.read(1, window=window) for window in windows]
-
-                results = pool.map(process_window, zip(windows, data, [mask] * len(windows)))
-
-                with rasterio.open(output_path, 'w', **profile) as dst:
-                    for window, result in results:
-                        dst.write(result, 1, window=window)
-
-        end_time = time.time()
-        elapsed_time = end_time - start_time
-
-        with open(log_file, "a") as log:
-            log.write(f"Using {cpus} CPUs: {elapsed_time:.2f} seconds\n")
+    if up >= 0:
+        print(f"Rank {rank}: Sending to up ({up}) and receiving from up")
+        comm.Sendrecv(local_matrix[1, :], dest=up, recvbuf=local_matrix[0, :], source=up)
+    if down < size:
+        print(f"Rank {rank}: Sending to down ({down}) and receiving from down")
+        comm.Sendrecv(local_matrix[-2, :], dest=down, recvbuf=local_matrix[-1, :], source=down)
         
-        print(f"Using {cpus} CPUs: {elapsed_time:.2f} seconds")
-                    
+    if left % num_block != num_block - 1:
+        print(f"Rank {rank}: Sending to left ({left}) and receiving from left")
+        comm.Sendrecv(local_matrix[:, 1], dest=left, recvbuf=local_matrix[:, 0], source=left)
+    if right % num_block != 0:
+        print(f"Rank {rank}: Sending to right ({right}) and receiving from right")
+        comm.Sendrecv(local_matrix[:, -2], dest=right, recvbuf=local_matrix[:, -1], source=right)
+        
+    return local_matrix
+
+def compute_d8(elev):
+    d8 = np.zeros_like(elev, dtype=np.uint8)
+    
+    directions = [16, 8, 4, 2, 1, 32, 64, 128]
+    shift = [(0, -1), (1, -1), (1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1)]
+    
+    for i in range(1, elev.shape[0] - 1):
+        for j in range(1, elev.shape[1] -1):
+            max_slope = 0
+            max_dir = 0
+            for k, (di, dj) in enumerate(shift):
+                ni, nj = i + di, j + dj
+                slope = (elev[i, j] - elev[ni, nj]) / (np.sqrt(2) if di != 0 and dj != 0 else 1)
+                if slope > max_slope:
+                    max_slope = slope
+                    max_dir = directions[k]
+            d8[i, j] = max_dir
+    return d8
+
+def process_d8(rank, size, num_block, dem, profile):
+    block_rows = dem.shape[0] // num_block
+    block_cols = dem.shape[1] // num_block
+    
+    row_start = (rank // num_block) * block_rows
+    row_end = row_start + block_rows
+    col_start = (rank % num_block) * block_cols
+    col_end = col_start + block_cols
+    
+    local_dem = dem[row_start:row_end, col_start:col_end]
+    local_dem = add_ghost_cells(local_dem)
+    
+    local_dem = exchange_ghost_cells(local_dem, rank, size, num_block)
+    
+    local_d8 = compute_d8(local_dem)
+    final_d8 = local_d8[1:-1, 1:-1]
+    
+    return final_d8
+
+def d8_initialize(dem, d8_tiff):
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    size = comm.Get_size()
+    
+    print(f"Rank {rank} of {size} started processing.")
+    
+    start_time = None
+    if rank == 0:
+        start_time = time.perf_counter()
+    
+    with rasterio.open(dem) as src:
+        dem = src.read(1)
+        profile = src.profile
+        
+    num_block = int(np.sqrt(size))
+    if num_block * num_block != size:
+        num_block = 1
+    
+    final_d8 = process_d8(rank, size, num_block, dem, profile)
+    
+    gathered_d8 = None
+    if rank == 0:
+        gathered_d8 = np.zeros_like(dem)
+        
+    final_d8 = np.ascontiguousarray(final_d8)  
+
+    if rank == 0:
+        gathered_d8 = np.zeros_like(dem) 
+        gathered_d8 = np.ascontiguousarray(gathered_d8)  
+
+    comm.Gather(final_d8, gathered_d8, root=0)
+    
+    if rank == 0:
+        with rasterio.open(d8_tiff, "w", **profile) as dst:
+            dst.write(gathered_d8, 1)
+        end_time = time.perf_counter()
+        execution_time = end_time - start_time
+        print(f"Execution time: {execution_time:.4f} seconds")
+  
 def normalize(array):
     """Normalizza un array tra 0 e 1."""
     return (array - np.min(array)) / (np.max(array) - np.min(array) + 1e-6)
