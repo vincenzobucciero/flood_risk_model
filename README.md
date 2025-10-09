@@ -96,3 +96,19 @@ pip install -r requirements.txt
 ```bash
 sudo apt install python3-dev build-essential
 ```
+
+## Configuration
+Before running, make sure your file paths are correctly defined in ```config.py```:
+```python
+from pathlib import Path
+BASE_DIR = Path(__file__).parent
+DATA_DIR = BASE_DIR / "data"
+
+DEM_FILEPATH = DATA_DIR / "campania_dem_combined.tiff"
+RADAR_FILEPATH = DATA_DIR / "radar.tiff"
+RADAR_CAMPANIA = DATA_DIR / "cropped.tif"
+CN_MAP_FILEPATH = BASE_DIR / "aligned_cn.tif"
+ALIGNED_CN_FILEPATH = BASE_DIR / "aligned_cn.tif"
+D8_FILEPATH = DATA_DIR / "d8.tif"
+RUNOFF_PATH = DATA_DIR / "runoff.nc"
+```
