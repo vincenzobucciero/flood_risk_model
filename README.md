@@ -117,7 +117,7 @@ python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 ```
-![NOTE] If ```richdem``` fails to build (missing Python.h), you need Python dev headers:
+> **Tip:** If ```richdem``` fails to build (missing Python.h), you need Python dev headers:
 ```bash
 sudo apt install python3-dev build-essential
 ```
@@ -139,3 +139,119 @@ RUNOFF_PATH = DATA_DIR / "runoff.nc"
 ```
 
 You can also configure custom directories for outputs, logging, and temporary tiles.
+
+## Execution
+To start the entire processing pipeline:
+```python
+python main.py
+```
+This will automatically:
+- Download DEM, GLC, and radar data
+- Merge and align all tiles
+- Compute the accumulated runoff
+- Generate flow direction (D8)
+- Produce the flood risk map
+Example console output:
+```python
+Starting flood risk data processing...
+DEM tiles downloaded successfully...
+GLC data converted to GeoTIFF...
+Surface runoff computation in progress...
+Process completed successfully!
+```
+If running in a distributed environment (MPI):
+```python
+mpirun -n 4 python main.py
+```
+
+## 📤 Generated Outputs
+
+| Output File | Type | Description |
+|--------------|------|--------------|
+| **`data/campania_dem_combined.tiff`** | 🗺️ GeoTIFF | Final merged **Digital Elevation Model (DEM)** of the study area |
+| **`data/cropped.tif`** | 🛰️ GeoTIFF | **Radar precipitation** dataset cropped to the Campania region |
+| **`aligned_cn.tif`** | 🧭 GeoTIFF | **Curve Number (CN)** map resampled and aligned with the DEM grid |
+| **`data/runoff.nc`** | 💧 NetCDF | Computed **accumulated surface runoff** across the DEM surface |
+| **`data/d8.tif`** | 🔢 GeoTIFF | **Flow direction map** generated using the **D8 algorithm** |
+| **`data/flood_risk.png`** | 🖼️ PNG | **Final flood risk visualization**, combining runoff and flow analysis |
+
+---
+
+> 📦 **Note:** All output files are automatically saved inside the `data/` directory during execution.  
+> If running on a remote server (SSH), use `matplotlib.use("Agg")` to save plots instead of displaying them interactively.
+
+---
+
+## Visualization Example
+```python
+import matplotlib
+matplotlib.use("Agg")  # ensures headless plotting on SSH
+import matplotlib.pyplot as plt
+from rasterio.plot import show
+
+show("data/flood_risk.png", title="Flood Risk Map")
+plt.savefig("data/flood_risk_preview.png", dpi=200)
+```
+> **Tip:** When running on remote SSH (no GUI), always save plots to file instead of displaying interactively.
+
+
+---
+
+## 🧪 Troubleshooting
+
+Below are common issues you might encounter during setup or execution, along with their recommended fixes.
+
+| Issue | Cause | Solution |
+|--------|--------|-----------|
+| **`FileNotFoundError: data/test_26mar`** | The radar input directory does not exist or is misconfigured. | Create the folder or update the path in `main.py`:<br>```python<br>runoff = calculate_accumulated_runoff("data", cn_map, MASK, config.DEM_FILEPATH, "runoff")<br>``` |
+| **`Python.h: No such file or directory`** | Python development headers are missing (required by `richdem`). | Install Python dev tools:<br>```bash<br>sudo apt install python3-dev build-essential<br>``` |
+| **`rasterio` / `GDAL` version mismatch** | Incompatible versions between GDAL and Rasterio. | Reinstall consistent versions:<br>```bash<br>micromamba install -n flood -c conda-forge gdal=3.10.* rasterio=1.4.3<br>``` |
+| **`richdem` build fails (no sudo)** | The package requires compilation. | Use the precompiled conda version or replace with:<br>```bash<br>pip install pysheds<br>``` |
+| **Plots do not display over SSH** | No GUI backend available in remote environments. | Force Matplotlib to use a non-interactive backend:<br>```python<br>import matplotlib<br>matplotlib.use("Agg")<br>``` |
+
+---
+
+## 🧬 Scientific Context
+
+The **Flood Risk Model** combines hydrological and geomorphological principles to estimate surface runoff and flood susceptibility.  
+It integrates:
+- The **Curve Number (CN)** method for runoff estimation  
+- The **D8 flow direction** algorithm for drainage modeling  
+- Spatial datasets from **Copernicus** and **ECMWF** for environmental and climatic context  
+
+This workflow supports reproducible research and HPC deployment for large-scale flood modeling.
+
+---
+
+## 📜 License & Author
+
+| Field | Information |
+|--------|-------------|
+| **Author** | *Vincenzo Bucciero* |
+| **Project** | *Flood Risk Model — Rainbow HPC Environment* |
+| **License** | MIT License |
+| **Contact** | [GitHub Profile](https://github.com/vincenzobucciero) |
+
+> Developed for scientific and academic use.  
+> If you use this project in research, please cite it appropriately.
+
+---
+
+## 🏁 Quick Start Summary
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/yourusername/flood_risk_model.git
+cd flood_risk_model
+
+# 2. Create and activate environment
+micromamba create -n flood -c conda-forge python=3.10 gdal rasterio richdem
+micromamba activate flood
+
+# 3. Install dependencies
+pip install -r requirements.txt
+
+# 4. Adjust configuration paths in config.py if needed
+
+# 5. Run the model
+python main.py
