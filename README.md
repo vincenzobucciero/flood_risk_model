@@ -1,61 +1,42 @@
-# Flood Risk Model
+# 🌊 Flood Risk Model
 
-Questo repository contiene un modello per la valutazione del rischio di alluvione basato su dati raster.
+**Flood Risk Model** is a Python-based framework for **hydrological analysis and flood risk assessment**.  
+It integrates multiple geospatial datasets — including **Digital Elevation Model (DEM)**, **Land Cover (GLC)**, **Curve Number (CN)**, and **radar precipitation data** — to compute **surface runoff** and generate a **flood risk map** using D8 flow direction algorithms.
 
-## Struttura del progetto
+---
 
-```
- flood_risk_model/
- │
- ├── main.py               # Script principale per eseguire il modello
- ├── raster_utils.py       # Funzioni per la gestione e analisi dei dati raster
- ├── hydrology.py          # Modulo per calcoli idrologici e modellazione
- ├── alert_system.py       # Sistema di allerta basato sui risultati del modello [al momento non utilizzato , future implementazioni ]
- ├── data/                 # Cartella contenente i dati di input
- │   ├── dem.tif           # Modello digitale di elevazione (DEM)
- │   ├── radar.tif         # Dati radar grezzi
- │   └── reprojected_radar.tif # Dati radar rielaborati e riproiettati
- └── README.md             # Documentazione del progetto
-```
+## 📑 Table of Contents
 
-## Guida all'installazione ed esecuzione
+- [Overview](#overview)
+- [Project Structure](#project-structure)
+- [System Requirements](#system-requirements)
+- [Installation](#installation)
+  - [Option 1: Micromamba (recommended)](#option-1-micromamba-recommended)
+  - [Option 2: Python Virtual Environment](#option-2-python-virtual-environment)
+- [Configuration](#configuration)
+- [Execution](#execution)
+- [Generated Outputs](#generated-outputs)
+- [Troubleshooting](#troubleshooting)
+- [License & Author](#license--author)
 
-Per configurare l'ambiente ed installare tutte le dipendenze necessarie.
+---
 
-1. Clona il repository
-   
-   ```bash
-   git clone https://github.com/checcafor/flood_risk_model
-   cd flood_risk_model
-   ```
-2. Configura l'ambiente virtuale
-   > **ℹ NOTE**
-   > La libreria `RichDEM` richiede funzionalità specifiche di `Python 3.10` per funzionare correttamente. Altre versioni di Python potrebbero non supportare alcune dipendenze o funzionalità utilizzate dalla libreria.
-   
-   ```bash
-   # rimuovi l'ambiente virtuale esistente (se presente)
-   rm -rf venv
+## 🧭 Overview
 
-   # crea un nuovo ambiente virtuale con Python 3.10
-   python3.10 -m venv venv
+This project automates a full end-to-end hydrological workflow:
 
-   # attiva l'ambiente virtuale
-   source venv/bin/activate # su linux/mac
-   ``` 
-4. Installare le altre dipendenze
-   
-   ```bash
-   pip install -r requirements.txt
-   pip install richdem
-   ```
-5. Configurazione delle credenziali
-   Per utilizzare questo progetto, è necessario configurare le credenziali come variabili d'ambiente. Esegui i seguenti comandi nel terminale:
-   ```bash
-   export CLIENT_SECRET=" ... "
-   export CLIENT_ID=" ... "
-   ```
-7. Esecuzione del modello
-   
-   ```bash
-   python main.py
-   ```
+1. **Download and merge DEM tiles**
+2. **Download and convert GLC (Global Land Cover) data**
+3. **Crop and align radar precipitation data**
+4. **Align and resample the Curve Number (CN) map**
+5. **Compute accumulated surface runoff (NetCDF)**
+6. **Generate D8 flow direction maps**
+7. **Produce a flood risk map and visualization**
+
+The pipeline leverages **GDAL**, **Rasterio**, **RichDEM**, and **NumPy/SciPy** for raster processing,  
+and supports distributed execution via **MPI (mpi4py)**.
+
+---
+
+## 📂 Project Structure
+
