@@ -40,3 +40,59 @@ and supports distributed execution via **MPI (mpi4py)**.
 
 ## 📂 Project Structure
 
+
+
+
+
+
+
+
+
+
+
+
+
+---
+
+## 💻 System Requirements
+
+| Component | Minimum Requirement |
+|------------|--------------------|
+| **OS** | Linux (tested on Ubuntu 22.04 / Rainbow cluster) |
+| **Python** | 3.10 or later |
+| **Memory** | ≥ 8 GB RAM recommended |
+| **Dependencies** | GDAL ≥ 3.8, NetCDF, C++ compiler (for `richdem`) |
+
+---
+
+## ⚙️ Installation
+
+### Option 1: Micromamba (recommended, no `sudo` required)
+
+```bash
+# Install micromamba (only once)
+export MAMBA_ROOT_PREFIX=~/micromamba
+curl -Ls https://micro.mamba.pm/install.sh | bash
+source ~/.bashrc
+
+# Create environment with all scientific dependencies
+micromamba create -n flood -c conda-forge \
+  python=3.10 gdal=3.10.* rasterio=1.4.3 richdem=2.3 \
+  netcdf4 numpy scipy shapely pandas mpi4py mpich
+
+micromamba activate flood
+
+# Install remaining dependencies via pip
+pip install -r requirements.txt
+```
+
+### Option 2: Python Virtual Environment
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+![NOTE] If ```richdem``` fails to build (missing Python.h), you need Python dev headers:
+```bash
+sudo apt install python3-dev build-essential
+```
