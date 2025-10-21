@@ -3,8 +3,8 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1           # un solo processo
 #SBATCH --cpus-per-task=10    # usa 10 core; puoi aumentare fino a 20
-#SBATCH --mem=88G            # lascia un margine al sistema
-#SBATCH --time=48:00:00      # adattalo alle tue esigenze
+#SBATCH --mem=128G            # lascia un margine al sistema
+#SBATCH --time=06:00:00      # adattalo alle tue esigenze
 #SBATCH --partition=h100gpu  # o la coda del tuo cluster
 #SBATCH --output=runoff_italy-%j.out
 #SBATCH --error=runoff_italy-%j.err
