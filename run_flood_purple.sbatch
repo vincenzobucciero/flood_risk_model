@@ -14,6 +14,10 @@ export PATH="$HOME/.local/bin:$PATH"
 eval "$(micromamba shell hook --shell bash)"
 micromamba activate flood
 
+set -a
+source /home/v.bucciero/projects/hiwefi/flood_risk_model/.env
+set +a
+
 # vai nella directory del progetto
 cd /home/v.bucciero/projects/hiwefi/flood_risk_model
 
