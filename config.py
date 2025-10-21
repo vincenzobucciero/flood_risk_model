@@ -18,7 +18,7 @@ import os
 
 # Cartella base (dove si trova questo file)
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "/home/v.bucciero/data/instruments/rdr0_previews_h100gpu/epoch_000/predictions")
+DATA_DIR = os.path.join(BASE_DIR, "data")
 
 # Path al DEM combinato dell’Italia
 DEM_FILEPATH = os.path.join(DATA_DIR, "italy_dem_combined.tiff")
@@ -31,7 +31,7 @@ ALIGNED_CN_FILEPATH = os.path.join(DATA_DIR, "aligned_cn_italy.tif")
 
 # Directory che conterrà i file GeoTIFF delle precipitazioni predette dal tuo modello AI.
 # Aggiorna questo percorso con la cartella dove salverai le tue predizioni.
-PREDICTION_DIR = os.path.join(DATA_DIR, "precip_predictions")
+PREDICTION_DIR = os.path.join(DATA_DIR, "/home/v.bucciero/data/instruments/rdr0_previews_h100gpu/epoch_000/predictions")
 
 # Path per il file di direzione del flusso D8 (generato dallo script hydrology)
 D8_FILEPATH = os.path.join(DATA_DIR, "D8_output_italy.tiff")
