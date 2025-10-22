@@ -5,7 +5,7 @@
 #SBATCH --cpus-per-task=10    # usa 10 core; puoi aumentare fino a 20
 #SBATCH --mem=32G            # lascia un margine al sistema
 #SBATCH --time=06:00:00      # adattalo alle tue esigenze
-#SBATCH --partition=h100gpu  # o la coda del tuo cluster
+#SBATCH --partition=xhicpu  # o la coda del tuo cluster
 #SBATCH --chdir=/home/v.bucciero/projects/hiwefi/flood_risk_model
 #SBATCH --output=runoff_italy-%j.out
 #SBATCH --error=runoff_italy-%j.err
