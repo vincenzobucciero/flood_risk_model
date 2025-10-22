@@ -74,7 +74,7 @@ from rasterio.transform import from_bounds
 
 # Cartella dei dati (../data rispetto a questo file)
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
-GLC_ZIP_FILE = os.path.join(DATA_DIR, "glc_global.zip")
+GLC_ZIP_FILE = os.path.join(DATA_DIR, "ee75a374499e6e965825d7f0a427407c.zip")
 
 # Bounding box italiano per l’area richiesta:
 # ordine CDS API: [lat_max, lon_min, lat_min, lon_max]
