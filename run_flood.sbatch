@@ -6,8 +6,14 @@
 #SBATCH --nodes=1                 # run on a single compute node
 #SBATCH --ntasks=1                # number of MPI tasks (processes)
 #SBATCH --cpus-per-task=8         # number of CPU cores to use per task
-#SBATCH --mem=32G                # total memory requested for the job
+#SBATCH --mem=48G                # total memory requested for the job
 #SBATCH --time=24:00:00           # wall‑clock time limit (24 hours)
+
+# Load required modules
+eval "$(~/projects/flood_risk_model/bin/micromamba shell hook --shell bash)"
+
+# Initialize micromamba
+micromamba activate flood
 #SBATCH --partition=gpu       # queue/partition name – adjust for your cluster
 
 # If your environment depends on other modules (e.g. GDAL, OpenMPI), load them here.

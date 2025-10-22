@@ -1,7 +1,19 @@
-'''
 import glob
 import os
 
+'''
+# Cartella base (dove si trova questo file)
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+
+# Percorsi dei file
+DEM_FILEPATH = os.path.join(BASE_DIR, "data/italy_dem_combined.tiff")
+RADAR_FILEPATH = "/storage/external_01/hiwefi/data/rdr0_val_previews/epoch_000/predictions/rdr0_d01_20250903Z1110_VMI_pred.tiff"
+REPROJECTED_RADAR_FILEPATH = os.path.join(BASE_DIR, "data/reprojected_radar.tiff")
+CN_MAP_FILEPATH = os.path.join(BASE_DIR, "data/glc_italy.tif")
+D8_FILEPATH = os.path.join(BASE_DIR, "D8_output.tiff")
+ALIGNED_CN_FILEPATH = os.path.join(BASE_DIR, "aligned_cn.tif")
+'''
+'''
 # Percorsi dei file
 DEM_FILEPATH = "data/campania_dem_combined.tiff"
 RADAR_FILEPATH = "data/rdr0_d01_20250401Z0540_VMI_cropped.tiff" # dinosauro
@@ -13,8 +25,6 @@ CN_MAP_FILEPATH = "data/aligned_cn.tif"
 D8_FILEPATH = "D8_output.tiff"
 ALIGNED_CN_FILEPATH = "aligned_cn.tif"
 '''
-
-import os
 
 # Cartella base (dove si trova questo file)
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -29,11 +39,9 @@ CN_MAP_FILEPATH = os.path.join(DATA_DIR, "glc_italy.tif")
 # Path alla mappa Curve Number riallineata sulla griglia del DEM
 ALIGNED_CN_FILEPATH = os.path.join(DATA_DIR, "aligned_cn_italy.tif")
 
-# Directory che conterrà i file GeoTIFF delle precipitazioni predette dal tuo modello AI.
-# Aggiorna questo percorso con la cartella dove salverai le tue predizioni.
-# PREDICTION_DIR = os.path.join(DATA_DIR, "/storage/external_01/hiwefi/data/rdr0_val_previews/epoch_000/predictions")
-
-PREDICTION_DIR = os.path.join(DATA_DIR, "/home/v.bucciero/data/instruments/rdr0_previews_h100gpu/epoch_000/predictions/")
+# Directory che contiene i file GeoTIFF delle precipitazioni predette dal modello AI
+PREDICTION_DIR = "/storage/external_01/hiwefi/data/rdr0_val_previews/epoch_000/predictions"
+PREDICTION_FILE = os.path.join(PREDICTION_DIR, "rdr0_d01_20250903Z1110_VMI_pred.tiff")
 
 
 # Path per il file di direzione del flusso D8 (generato dallo script hydrology)
