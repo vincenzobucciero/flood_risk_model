@@ -1,6 +1,5 @@
 #!/bin/bash
 #SBATCH --job-name=runoff_italy
-#SBATCH --gres=gpu:1
 #SBATCH --ntasks=1           # un solo processo
 #SBATCH --cpus-per-task=10    # usa 10 core; puoi aumentare fino a 20
 #SBATCH --mem=32G            # lascia un margine al sistema
