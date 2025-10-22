@@ -110,49 +110,80 @@ def extract_netcdf(zip_file, destination_dir):
     Estrae dal file ZIP il NetCDF corrispondente all’Italia.
     Cerca il nome del file basandosi sulla costante GLC_NETCDF_FILE.
     """
-    target_file = os.path.basename(GLC_NETCDF_FILE)
-    with zipfile.ZipFile(zip_file, "r") as zip_ref:
-        if target_file not in zip_ref.namelist():
-            print(f"File {target_file} non trovato nello ZIP; contenuto: {zip_ref.namelist()}")
-            return
-        zip_ref.extract(target_file, destination_dir)
+    def extract_netcdf(zip_file, destination_dir):
+        with zipfile.ZipFile(zip_file, "r") as z:
+            nc_members = [m for m in z.namelist() if m.endswith(".nc")]
+            if not nc_members:
+                print(f"Nello ZIP non ci sono .nc. Contenuto: {z.namelist()}")
+                return None
+            target = nc_members[0]  # prendi il primo .nc
+            z.extract(target, destination_dir)
+            extracted = os.path.join(destination_dir, target)
+            print(f"File estratto: {extracted}")
+            return extracted
 
-    extracted_file = os.path.join(destination_dir, target_file)
-    if os.path.exists(extracted_file):
-        print(f"File {extracted_file} estratto correttamente!")
-    else:
-        print(f"Errore: il file {extracted_file} non è stato estratto.")
 
-def convert_to_geotiff():
-    """Converte il NetCDF estratto in un GeoTIFF (EPSG:4326)."""
-    ds = xr.open_dataset(GLC_NETCDF_FILE)
-    # Assumi che la variabile dati sia la prima nel NetCDF
-    variable = list(ds.data_vars.keys())[0]
-    data = ds[variable].isel(time=0).values
+def convert_to_geotiff(nc_path):
+    import numpy as np
+    import xarray as xr
+    import rasterio
+    from rasterio.transform import from_bounds
 
-    # Calcola il transform dai bounds del dataset
-    transform = from_bounds(
-        float(ds.lon.min()), float(ds.lat.min()),
-        float(ds.lon.max()), float(ds.lat.max()),
-        data.shape[1], data.shape[0]
+    # 1) apri con h5netcdf e disattiva mask/scale per evitare bug in __getitem__
+    ds = xr.open_dataset(
+        nc_path,
+        engine="h5netcdf",       # <-- chiave per evitare l'HDF error del backend netcdf4
+        mask_and_scale=False,    # <-- niente _FillValue/scale durante il read
+        decode_cf=False          # <-- evita decodifica automatica
     )
 
+    # 2) prendi la prima variabile di dati
+    var = list(ds.data_vars.keys())[0]
+    da = ds[var]
+    # gestisci la dimensione time se esiste
+    if "time" in da.dims:
+        da = da.isel(time=0)
+
+    data = da.values
+
+    # 3) bounds da coordinate
+    lon_min = float(ds.lon.min())
+    lon_max = float(ds.lon.max())
+    lat_min = float(ds.lat.min())
+    lat_max = float(ds.lat.max())
+
+    transform = from_bounds(lon_min, lat_min, lon_max, lat_max,
+                            data.shape[1], data.shape[0])
+
+    # 4) assicurati che il dtype sia adatto a GeoTIFF (uint8 qui va benissimo)
+    if data.dtype.kind == "u" and data.dtype.itemsize == 1:
+        out_dtype = data.dtype
+    else:
+        out_dtype = np.uint8
+        data = data.astype(out_dtype, copy=False)
+
     with rasterio.open(
-        GLC_TIFF_FILE,
-        "w",
+        GLC_TIFF_FILE, "w",
         driver="GTiff",
         height=data.shape[0],
         width=data.shape[1],
         count=1,
-        dtype=data.dtype,
+        dtype=out_dtype,
         crs="EPSG:4326",
         transform=transform,
+        compress="deflate"
     ) as dst:
         dst.write(data, 1)
+
+    ds.close()
     print("GLC convertito in GeoTIFF.")
 
+
+
 def process_glc():
-    """Scarica, estrae e converte il dataset di copertura del suolo per l’Italia."""
     download_glc()
-    extract_netcdf(GLC_ZIP_FILE, DATA_DIR)
-    convert_to_geotiff()
+    extracted_nc = extract_netcdf(GLC_ZIP_FILE, DATA_DIR)
+    if not extracted_nc:
+        raise RuntimeError("NetCDF non estratto dallo ZIP.")
+    convert_to_geotiff(extracted_nc)
+

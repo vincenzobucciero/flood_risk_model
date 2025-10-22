@@ -21,5 +21,10 @@ set +a
 # vai nella directory del progetto
 cd /home/v.bucciero/projects/hiwefi/flood_risk_model
 
+# disabilita il file locking HDF5 su FS di rete
+export HDF5_USE_FILE_LOCKING=FALSE
+# (opzionale ma utile) evita cache di chunk HDF5 troppo aggressive
+export HDF5_DISABLE_VERSION_CHECK=2
+
 # esegui lo script
 python -u main.py
