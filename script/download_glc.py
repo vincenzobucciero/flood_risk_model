@@ -145,7 +145,7 @@ def convert_to_geotiff():
         width=data.shape[1],
         count=1,
         dtype=data.dtype,
-        crs="EPSG:3857",
+        crs="EPSG:4326",
         transform=transform,
     ) as dst:
         dst.write(data, 1)
