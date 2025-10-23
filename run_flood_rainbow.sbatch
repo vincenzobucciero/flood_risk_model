@@ -10,7 +10,7 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
 #SBATCH --time=04:00:00
-#SBATCH --partition=rainbow
+#SBATCH --partition=gpu
 
 ### NOTE: Adjust --mem, --cpus-per-task and --time according to the node specs and
 ### processing profile. For full-Italy alignment the memory requirement is higher.

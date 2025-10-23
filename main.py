@@ -1,50 +1,52 @@
-'''
+import os
 from raster_utils import *
 from hydrology import *
 from termcolor import colored
-import script.download 
-import config  
+import config
 
 def main():
-    print(colored("Avvio del processo di elaborazione dei dati...", "cyan"))
+    print(colored("Starting flood risk data processing...", "cyan"))
     
-    script.download.main()
+    # Ensure outputs directory exists
+    os.makedirs("outputs", exist_ok=True)
 
-    # Caricamento DEM
-    print(colored("Caricamento del DEM in corso...", "green"))
+    # Load DEM and mask
+    print(colored("Loading DEM data...", "green"))
     dem_data, dem_profile = latlon_load_and_plot_dem(config.DEM_FILEPATH)
     MASK = sea_mask(config.DEM_FILEPATH)
-        
-    # Crop del radar
-    print(colored("Esecuzione del crop del radar...", "yellow"))
-    crop_tiff_to_campania(config.RADAR_FILEPATH, config.RADAR_CAMPANIA)
-    
-    # Riallineamento della mappa CN al DEM
-    print(colored("Riallineamento della mappa Curve Number al DEM...", "green"))
-    align_radar_to_dem(config.CN_MAP_FILEPATH, config.DEM_FILEPATH, config.ALIGNED_CN_FILEPATH)
-    
-    # Caricamento mappa Curve Number riallineata
-    print(colored("Caricamento della mappa Curve Number riallineata...", "yellow"))
+
+    # Align CN map if needed
+    print(colored("Processing Curve Number map...", "green"))
+    if not os.path.exists(config.ALIGNED_CN_FILEPATH):
+        align_radar_to_dem(config.CN_MAP_FILEPATH, config.DEM_FILEPATH, config.ALIGNED_CN_FILEPATH)
     cn_map, _ = latlon_load_and_plot_land_cover(config.ALIGNED_CN_FILEPATH)
+
+    # Run runoff calculation on the prediction file
+    print(colored(f"Processing radar prediction: {config.PREDICTION_FILE}", "yellow"))
+    runoff = process_radar_file(
+        config.PREDICTION_FILE,
+        cn_map,
+        MASK,
+        config.DEM_FILEPATH
+    )
     
-    # Calcolo del deflusso superficiale (Runoff)
-    print(colored("Calcolo del deflusso superficiale...", "blue"))
-    runoff = calculate_accumulated_runoff("data/test_26mar", cn_map, MASK, config.DEM_FILEPATH, "runoff", output_format="netcdf")
-    plot_territory_boundaries(dem_data, runoff)
-    
-    print(colored("Calcolo della direzione del flusso D8...", "blue"))
+    # Save output as NetCDF
+    print(colored("Saving output as NetCDF...", "yellow"))
+    save_as_netcdf(runoff, "outputs/runoff_single.nc", config.DEM_FILEPATH)
+
+    # Calculate D8 flow direction
+    print(colored("Calculating D8 flow direction...", "blue"))
     d8_initialize(config.DEM_FILEPATH, config.D8_FILEPATH)
-    # scalability_test(config.DEM_FILEPATH, config.D8_FILEPATH)
-    # scalability_test(config.DEM_FILEPATH, config.D8_FILEPATH, MASK)
-    
+
+    # Compute and visualize flood risk
+    print(colored("Computing flood risk map...", "blue"))
     flood_risk_map = compute_flood_risk(config.D8_FILEPATH, runoff)
     visualize_flood_risk_with_legend(flood_risk_map, dem_data)
     
-    print(colored("Processo completato con successo!", "cyan"))
+    print(colored("Processing completed successfully!", "cyan"))
 
 if __name__ == "__main__":
     main()
-'''
 
 
 from raster_utils import *
