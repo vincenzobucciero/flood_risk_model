@@ -6,6 +6,12 @@ import matplotlib.pyplot as plt
 from scipy.ndimage import map_coordinates
 from osgeo import gdal
 import os
+from rasterio.transform import from_bounds
+from affine import Affine
+import tempfile
+# If NO_PLOT is set to "1" (default), plotting functions will skip showing figures.
+# This is useful for headless/batch runs where matplotlib can block or slow execution.
+NO_PLOT = os.getenv("NO_PLOT", "1") == "1"
 import seaborn as sns
 import matplotlib.colors as mcolors
 from scipy.ndimage import sobel
@@ -28,12 +34,13 @@ def load_and_plot_dem(file_path, title="Modello Digitale Elevazione (DEM)"):
         profile = src.profile
         print(f"{title} Metadata:\n", profile)
         
-        plt.figure(figsize=(8, 6))
-        plt.title(title, fontsize=14, fontweight="bold")
-        plt.imshow(data, cmap='terrain')
-        plt.colorbar(label='Altitudine (m)')
-        plt.axis('off')  
-        plt.show()
+        if not NO_PLOT:
+            plt.figure(figsize=(8, 6))
+            plt.title(title, fontsize=14, fontweight="bold")
+            plt.imshow(data, cmap='terrain')
+            plt.colorbar(label='Altitudine (m)')
+            plt.axis('off')
+            plt.show()
         
         return data, profile
 
@@ -62,13 +69,14 @@ def latlon_load_and_plot_dem(file_path, title="Modello Digitale Elevazione (DEM)
 
         data = np.where(data <= 0, np.nan, data)
 
-        plt.figure(figsize=(8, 6))
-        plt.pcolormesh(lon, lat, data, cmap="terrain", shading="auto")
-        plt.colorbar(label="Altitudine (m)")
-        plt.xlabel("Longitudine")
-        plt.ylabel("Latitudine")
-        plt.title(title, fontsize=14, fontweight="bold")
-        plt.show()
+        if not NO_PLOT:
+            plt.figure(figsize=(8, 6))
+            plt.pcolormesh(lon, lat, data, cmap="terrain", shading="auto")
+            plt.colorbar(label="Altitudine (m)")
+            plt.xlabel("Longitudine")
+            plt.ylabel("Latitudine")
+            plt.title(title, fontsize=14, fontweight="bold")
+            plt.show()
         
         return data, profile
     
@@ -91,14 +99,15 @@ def load_and_plot_rainfall(file_path, title="Raster Pioggia"):
         
         data = np.where(data <= 0, np.nan, data)
         
-        plt.figure(figsize=(8, 6))
-        plt.title(title, fontsize=14, fontweight="bold")
-        cmap = plt.cm.Blues
-        cmap.set_bad(color='lightgray') 
-        plt.imshow(data, cmap=cmap)
-        plt.colorbar(label='Intensità di pioggia (mm/h)')
-        plt.axis('off')  
-        plt.show()
+        if not NO_PLOT:
+            plt.figure(figsize=(8, 6))
+            plt.title(title, fontsize=14, fontweight="bold")
+            cmap = plt.cm.Blues
+            cmap.set_bad(color='lightgray')
+            plt.imshow(data, cmap=cmap)
+            plt.colorbar(label='Intensità di pioggia (mm/h)')
+            plt.axis('off')
+            plt.show()
         
         return data, profile
     
@@ -127,14 +136,15 @@ def latlon_load_and_plot_rainfall(file_path, title="Raster Pioggia"):
 
         data = np.where(data <= 0, np.nan, data)
 
-        plt.figure(figsize=(8, 6))
-        cmap = plt.cm.Blues
-        plt.pcolormesh(lon, lat, data, cmap=cmap, shading="auto")
-        plt.colorbar(label='Intensità di pioggia (mm/h)')
-        plt.xlabel("Longitudine")
-        plt.ylabel("Latitudine")
-        plt.title(title, fontsize=14, fontweight="bold")
-        plt.show()
+        if not NO_PLOT:
+            plt.figure(figsize=(8, 6))
+            cmap = plt.cm.Blues
+            plt.pcolormesh(lon, lat, data, cmap=cmap, shading="auto")
+            plt.colorbar(label='Intensità di pioggia (mm/h)')
+            plt.xlabel("Longitudine")
+            plt.ylabel("Latitudine")
+            plt.title(title, fontsize=14, fontweight="bold")
+            plt.show()
         
         return data, profile
     
@@ -158,14 +168,15 @@ def load_and_plot_land_cover(file_path, title="Mappa Land Cover"):
         water_value = 0  
         data = np.where(data == water_value, np.nan, data)
         
-        plt.figure(figsize=(8, 6))
-        plt.title(title, fontsize=14, fontweight="bold")
-        cmap = plt.cm.viridis
-        cmap.set_bad(color='lightblue') 
-        plt.imshow(data, cmap=cmap)
-        plt.colorbar(label='Tipo di copertura terrestre')
-        plt.axis('off')  
-        plt.show()
+        if not NO_PLOT:
+            plt.figure(figsize=(8, 6))
+            plt.title(title, fontsize=14, fontweight="bold")
+            cmap = plt.cm.viridis
+            cmap.set_bad(color='lightblue')
+            plt.imshow(data, cmap=cmap)
+            plt.colorbar(label='Tipo di copertura terrestre')
+            plt.axis('off')
+            plt.show()
         
         return data, profile
 
@@ -194,15 +205,16 @@ def latlon_load_and_plot_land_cover(file_path, title="Mappa Land Cover"):
 
         data = np.where(data == 0, np.nan, data)
 
-        plt.figure(figsize=(8, 6))
-        cmap = plt.cm.viridis
-        cmap.set_bad(color='lightblue') 
-        plt.pcolormesh(lon, lat, data, cmap=cmap, shading="auto")
-        plt.colorbar(label='Tipo di copertura terrestre')
-        plt.xlabel("Longitudine")
-        plt.ylabel("Latitudine")
-        plt.title(title)
-        plt.show()
+        if not NO_PLOT:
+            plt.figure(figsize=(8, 6))
+            cmap = plt.cm.viridis
+            cmap.set_bad(color='lightblue')
+            plt.pcolormesh(lon, lat, data, cmap=cmap, shading="auto")
+            plt.colorbar(label='Tipo di copertura terrestre')
+            plt.xlabel("Longitudine")
+            plt.ylabel("Latitudine")
+            plt.title(title)
+            plt.show()
         
         return data, profile
 
@@ -226,13 +238,14 @@ def plot_raster_with_latlon(file_path, title="Raster con coordinate geografiche"
 
         data = np.where(data <= 0, np.nan, data)
 
-        plt.figure(figsize=(8, 6))
-        plt.pcolormesh(lon, lat, data, cmap="terrain", shading="auto")
-        plt.colorbar(label="Altitudine (m)")
-        plt.xlabel("Longitudine")
-        plt.ylabel("Latitudine")
-        plt.title(title)
-        plt.show()
+        if not NO_PLOT:
+            plt.figure(figsize=(8, 6))
+            plt.pcolormesh(lon, lat, data, cmap="terrain", shading="auto")
+            plt.colorbar(label="Altitudine (m)")
+            plt.xlabel("Longitudine")
+            plt.ylabel("Latitudine")
+            plt.title(title)
+            plt.show()
 
 def visualize_flood_risk(risk_map):
     """
@@ -240,19 +253,17 @@ def visualize_flood_risk(risk_map):
 
     :param risk_map: Array numpy contenente i dati di rischio alluvionale.
     """
-    plt.figure(figsize=(10, 6))
-    
-    cmap = sns.color_palette("Reds", as_cmap=True)
-    img = plt.imshow(risk_map, cmap=cmap, interpolation="nearest")
+    if not NO_PLOT:
+        plt.figure(figsize=(10, 6))
+        cmap = sns.color_palette("Reds", as_cmap=True)
+        img = plt.imshow(risk_map, cmap=cmap, interpolation="nearest")
 
-    cbar = plt.colorbar(img, fraction=0.046, pad=0.04)
-    cbar.set_label("Livello di Rischio di Alluvione", fontsize=12)
-    
-    plt.title("Mappa del Rischio Alluvionale", fontsize=14, fontweight="bold")
-    plt.xlabel("Longitudine (pixel)", fontsize=12)
-    plt.ylabel("Latitudine (pixel)", fontsize=12)
-    
-    plt.show()
+        cbar = plt.colorbar(img, fraction=0.046, pad=0.04)
+        cbar.set_label("Livello di Rischio di Alluvione", fontsize=12)
+        plt.title("Mappa del Rischio Alluvionale", fontsize=14, fontweight="bold")
+        plt.xlabel("Longitudine (pixel)", fontsize=12)
+        plt.ylabel("Latitudine (pixel)", fontsize=12)
+        plt.show()
     
 def classify_risk_levels(risk_map):
     """
@@ -336,8 +347,54 @@ def align_radar_to_dem(radar_tiff, dem_tiff, output_tiff):
                                dem_height)
         xv, yv = np.meshgrid(x_coords, y_coords)
 
-    # Carica il radar
-    with rasterio.open(radar_tiff) as radar_src:
+    # Carica il radar; se manca georeferenziazione, assegniamo una proiezione temporanea
+    tmp_assigned = None
+    try:
+        with rasterio.open(radar_tiff) as radar_src:
+            radar_data = radar_src.read(1)
+            radar_profile = radar_src.profile
+            radar_transform = radar_src.transform
+            radar_crs = radar_src.crs
+
+            needs_georef = (radar_crs is None) or (radar_transform == rasterio.Affine.identity())
+    except Exception as e:
+        raise
+
+    radar_path_to_use = radar_tiff
+    if needs_georef:
+        # Use a reference raster to assign georef (prefer data/reprojected_radar.tiff then DEM)
+        ref_candidates = [os.path.join(os.path.dirname(__file__), '..', 'data', 'reprojected_radar.tiff'), dem_tiff]
+        ref_path = None
+        for c in ref_candidates:
+            c = os.path.abspath(c)
+            if os.path.exists(c):
+                ref_path = c
+                break
+
+        if ref_path is None:
+            print(f"No reference raster found to assign georef to {radar_tiff}; proceeding without assignment.")
+        else:
+            with rasterio.open(ref_path) as ref:
+                ref_bounds = ref.bounds
+                ref_crs = ref.crs
+                rows, cols = rasterio.open(radar_tiff).height, rasterio.open(radar_tiff).width
+                new_transform = from_bounds(ref_bounds.left, ref_bounds.bottom, ref_bounds.right, ref_bounds.top, cols, rows)
+
+            # write temporary georeferenced copy
+            import tempfile
+            tmp_fd, tmp_name = tempfile.mkstemp(suffix='.tiff')
+            os.close(tmp_fd)
+            tmp_assigned = tmp_name
+            with rasterio.open(radar_tiff) as src:
+                profile = src.profile.copy()
+                profile.update({'crs': ref_crs, 'transform': new_transform, 'height': rows, 'width': cols})
+                data = src.read(1)
+                with rasterio.open(tmp_name, 'w', **profile) as dst:
+                    dst.write(data, 1)
+            radar_path_to_use = tmp_name
+            print(f"Assigned temporary georef from {ref_path} to {radar_tiff} (tmp: {tmp_name})")
+
+    with rasterio.open(radar_path_to_use) as radar_src:
         radar_data = radar_src.read(1)
         radar_profile = radar_src.profile
         radar_transform = radar_src.transform
@@ -346,7 +403,7 @@ def align_radar_to_dem(radar_tiff, dem_tiff, output_tiff):
         # Verifica se i CRS sono diversi e converte se necessario
         if radar_crs != dem_crs:
             print("⚠️ ATTENZIONE: Il CRS del radar è diverso da quello del DEM. Viene effettuata la conversione.")
-            radar_src = rasterio.warp.reproject(
+            reprojected = rasterio.warp.reproject(
                 source=radar_data,
                 src_transform=radar_transform,
                 src_crs=radar_crs,
@@ -354,7 +411,8 @@ def align_radar_to_dem(radar_tiff, dem_tiff, output_tiff):
                 dst_shape=(dem_height, dem_width),
                 resampling=rasterio.enums.Resampling.bilinear
             )
-            radar_data = radar_src[0]
+            # rasterio.warp.reproject returns an ndarray in this calling pattern
+            radar_data = reprojected[0] if hasattr(reprojected, '__getitem__') else reprojected
 
     # Interpola i valori del radar alle coordinate centrali del DEM
     radar_x = np.linspace(radar_src.bounds.left, radar_src.bounds.right, radar_src.width)
@@ -371,11 +429,19 @@ def align_radar_to_dem(radar_tiff, dem_tiff, output_tiff):
 
     # Salva il raster allineato
     aligned_profile = dem_profile.copy()
-    aligned_profile.update(dtype=rasterio.float32, nodata=np.nan)
+    # Use explicit dtype string and avoid writing 'nan' as nodata metadata which
+    # can be interpreted as a string; prefer None so rasterio/gdal handle it as no-data mask
+    aligned_profile.update(dtype='float32', nodata=None)
     with rasterio.open(output_tiff, "w", **aligned_profile) as dst:
-        dst.write(radar_aligned.astype(rasterio.float32), 1)
+        dst.write(radar_aligned.astype(np.float32), 1)
 
     print(f"✅ File radar allineato salvato in: {output_tiff}")
+    # cleanup temporary assigned file
+    if tmp_assigned is not None and os.path.exists(tmp_assigned):
+        try:
+            os.remove(tmp_assigned)
+        except Exception:
+            pass
      
 def crop_tiff_to_campania(input_tiff, output_tiff):
     """
