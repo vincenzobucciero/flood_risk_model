@@ -40,12 +40,12 @@ CN_MAP_FILEPATH = os.path.join(DATA_DIR, "glc_italy.tif")
 ALIGNED_CN_FILEPATH = os.path.join(DATA_DIR, "aligned_cn_italy.tif")
 
 # Directory che contiene i file GeoTIFF delle precipitazioni predette dal modello AI
-PREDICTION_DIR = "/storage/external_01/hiwefi/data/rdr0_val_previews/epoch_000/predictions"
-PREDICTION_FILE = os.path.join(PREDICTION_DIR, "rdr0_d01_20250728Z1310_VMI_pred.tiff")  # Nuovo file random per test
+PREDICTION_DIR = "/home/vbucciero/projects/flood_risk_model/dataset/predictions"
+PREDICTION_FILE = os.path.join(PREDICTION_DIR, "rdr0_d01_20251008Z0300_VMI_pred.tiff")  # Nuovo file random per test
 
 
 # File di predizione da testare
-PREDICTION_FILE = os.path.join(PREDICTION_DIR, "rdr0_d01_20250728Z1310_VMI_pred.tiff")
+PREDICTION_FILE = os.path.join(PREDICTION_DIR, "rdr0_d01_20251008Z0300_VMI_pred.tiff")
 
 # Path per il file di direzione del flusso D8 (generato dallo script hydrology)
 D8_FILEPATH = os.path.join(DATA_DIR, "D8_output_italy.tiff")
