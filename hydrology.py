@@ -421,7 +421,6 @@ def save_as_netcdf(data, output_path, reference_file):
         runoff_var[:, :] = data
 '''
 
-
 import rasterio
 import numpy as np
 import os
@@ -771,4 +770,3 @@ def save_as_netcdf(data, output_path, reference_file):
 
         # Scrivi i dati
         runoff_var[:, :] = data
-
