@@ -1,71 +1,55 @@
-#!/bin/bash --login
-## SBATCH script to process prediction TIFFs on the 'rainbow' HPC using an array job.
-## Each array task will process one TIFF and write outputs/<tiff_stem>.nc
-#SBATCH --job-name=runoff_pred
-#SBATCH --output=runoff_rainbow-%A_%a.out
-#SBATCH --error=runoff_rainbow-%A_%a.err
+#!/bin/bash
+#SBATCH -J runoff1h
+#SBATCH -p gpu                  # <-- cambia la partition se diversa (es: short, standard, long)
+#SBATCH -c 8                    # CPU per task
+#SBATCH --mem=32G               # RAM
+#SBATCH -t 02:00:00             # walltime
+#SBATCH -o logs/runoff1h-%j.out
+#SBATCH -e logs/runoff1h-%j.err
 
-#SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=4
-#SBATCH --mem=32G
-#SBATCH --time=04:00:00
-#SBATCH --partition=gpu
+set -euo pipefail
 
-### NOTE: Adjust --mem, --cpus-per-task and --time according to the node specs and
-### processing profile. For full-Italy alignment the memory requirement is higher.
+# Directory del progetto
+WORKDIR="/home/vbucciero/projects/flood_risk_model"
+cd "$WORKDIR"
 
-set -eo pipefail
-# Protect against conda/micromamba deactivate hooks referencing unset variables
-export CONDA_BACKUP_CXX=${CONDA_BACKUP_CXX:-}
+# Cartelle log/outputs sicure
+mkdir -p logs outputs
 
-echo "Starting SLURM task $SLURM_ARRAY_TASK_ID of $SLURM_ARRAY_TASK_COUNT"
+# Allinea i thread al numero di CPU richieste
+export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-8}"
+export OPENBLAS_NUM_THREADS="$OMP_NUM_THREADS"
+export MKL_NUM_THREADS="$OMP_NUM_THREADS"
+export NUMEXPR_NUM_THREADS="$OMP_NUM_THREADS"
 
-eval "$(~/projects/flood_risk_model/bin/micromamba shell hook --shell bash)"
-micromamba activate flood
+# Percorso dell'ambiente (dai tuoi log risulta questo)
+ENV_PATH="$HOME/.local/share/mamba/envs/flood"
 
-cd /home/vbucciero/projects/flood_risk_model
+echo "=== Job info ==="
+echo "Workdir: $WORKDIR"
+echo "Env path: $ENV_PATH"
+echo "CPUs: $OMP_NUM_THREADS"
+echo "Start: $(date)"
+echo "================"
 
-# Build list of files and pick the one matching the array index (1-based)
-PRED_DIR="${PRED_DIR:-/storage/external_01/hiwefi/data/rdr0_val_previews/epoch_000/predictions}"
-FILES=("$(ls -1 $PRED_DIR/*.tiff)")
-
-if [ -z "${FILES[*]}" ]; then
-  echo "No TIFFs found in $PRED_DIR"; exit 1
+# Esegui con micromamba (preferito) oppure fallback su conda/mamba
+if command -v micromamba >/dev/null 2>&1; then
+  micromamba run -p "$ENV_PATH" python main_run_1h.py
+else
+  # fallback: prova con conda/mamba
+  if command -v conda >/dev/null 2>&1; then
+    # attiva base e poi env
+    source "$(conda info --base)/etc/profile.d/conda.sh"
+    conda activate "$ENV_PATH" 2>/dev/null || conda activate flood
+    python main_run_1h.py
+  elif command -v mamba >/dev/null 2>&1; then
+    source "$(mamba info --base)/etc/profile.d/conda.sh"
+    conda activate "$ENV_PATH" 2>/dev/null || conda activate flood
+    python main_run_1h.py
+  else
+    echo "Né micromamba né (ana)mamba/conda trovati nel PATH." >&2
+    exit 1
+  fi
 fi
 
-# Convert to bash array properly
-mapfile -t FILE_LIST < <(ls -1 "$PRED_DIR"/*.tiff)
-IDX=$((SLURM_ARRAY_TASK_ID-1))
-FILE=${FILE_LIST[$IDX]}
-
-echo "SLURM task processing: $FILE"
-
-# Run the per-file processing; the Python script will save outputs/<basename>.nc
-python - <<PY
-from hydrology import process_radar_file, save_as_netcdf
-from raster_utils import latlon_load_and_plot_land_cover, sea_mask, align_radar_to_dem
-import config, os
-
-# ensure outputs directory exists
-os.makedirs('outputs', exist_ok=True)
-
-# ensure aligned CN exists; if not, create it
-if not os.path.exists(config.ALIGNED_CN_FILEPATH):
-  print('Aligned CN not found; creating', config.ALIGNED_CN_FILEPATH)
-  align_radar_to_dem(config.CN_MAP_FILEPATH, config.DEM_FILEPATH, config.ALIGNED_CN_FILEPATH)
-
-cn_map, _ = latlon_load_and_plot_land_cover(config.ALIGNED_CN_FILEPATH)
-mask = sea_mask(config.DEM_FILEPATH)
-
-file = r"$FILE"
-print('Processing', file)
-runoff = process_radar_file(file, cn_map, mask, config.DEM_FILEPATH)
-if runoff is None:
-  raise SystemExit('Processing failed for ' + file)
-out_path = os.path.join('outputs', os.path.splitext(os.path.basename(file))[0] + '.nc')
-save_as_netcdf(runoff, out_path, config.DEM_FILEPATH)
-print('Saved', out_path)
-PY
-
-echo "Task completed"
+echo "Done: $(date)"
