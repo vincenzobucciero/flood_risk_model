@@ -3,8 +3,6 @@ import re
 import glob
 from collections import deque
 from datetime import datetime, timedelta
-import time
-import sys
 
 import numpy as np
 from termcolor import colored
@@ -26,7 +24,7 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # --- Utilità per i file e i timestamp ---
 
-FNAME_RE = re.compile(r".*?(\d{8})Z(\d{4})_VMI.*?_pred\.tif{1,2}f?$")
+FNAME_RE = re.compile(r".*?(\d{8})Z(\d{4}).*?_pred\.tif{1,2}f?$", re.IGNORECASE)
 # Esempio: rdr0_d01_20251008Z0300_VMI_pred.tiff
 # Gruppi: 20251008 e 0300
 
@@ -84,24 +82,43 @@ def build_expected_sequence(start_path, steps, step_minutes, directory):
         f"Non riesco a comporre {steps} file consecutivi da {start_path}. Mancanti: {missing_str}."
     )
 
+def build_sequence_after_start_by_position(start_path, steps, directory):
+    """Restituisce 'steps' file: lo start + i successivi in ordine (senza richiedere timestamp esatti)."""
+    all_preds = sorted(glob.glob(os.path.join(directory, "*_pred.tif*")))
+    if not all_preds:
+        raise FileNotFoundError(f"Nessun *_pred.tif* in {directory}")
 
-# --- util logging ---
+    # prova a trovare start esatto nella lista
+    if start_path in all_preds:
+        idx0 = all_preds.index(start_path)
+        seq = all_preds[idx0: idx0 + steps]
+    else:
+        # ricava ts dallo start e prendi il primo file con ts >= start
+        start_ts = parse_ts_from_fname(start_path)
+        if start_ts is None:
+            raise ValueError(f"Impossibile ricavare ts da: {start_path}")
+        def ts_or_min(p):
+            ts = parse_ts_from_fname(p)
+            return ts if ts is not None else datetime.min
+        all_by_ts = sorted(all_preds, key=ts_or_min)
+        idx0 = next((k for k,p in enumerate(all_by_ts) if (parse_ts_from_fname(p) or datetime.min) >= start_ts), 0)
+        seq = all_by_ts[idx0: idx0 + steps]
 
-def progress_bar(pct, width=24):
-    pct = max(0.0, min(1.0, pct))
-    done = int(pct * width)
-    return "[" + "#" * done + "." * (width - done) + f"] {pct*100:5.1f}%"
+    if len(seq) < steps:
+        raise FileNotFoundError(f"Dopo lo start ho trovato solo {len(seq)} file; steps richiesti={steps}")
+    return seq
 
-def fmt_eta(seconds):
-    if seconds < 60:
-        return f"~{seconds:.0f}s"
-    return f"~{seconds/60:.1f} min"
 
 
 # --- Pipeline principale con stato + aggregato mobile 1h ---
 
 def main():
-    start_time_total = time.time()
+    print(colored(f"USING config from: {os.path.abspath(config.__file__)}", "yellow"))
+    print(colored(f"PREDICTION_DIR      = {config.PREDICTION_DIR}", "yellow"))
+    print(colored(f"PREDICTION_START    = {config.PREDICTION_START_FILE}", "yellow"))
+    print(colored(f"WINDOW_STEPS        = {getattr(config, 'WINDOW_STEPS', None)}", "yellow"))
+    print(colored(f"STEP_MINUTES        = {getattr(config, 'STEP_MINUTES', None)}", "yellow"))
+
     print(colored("Run flood: stato per step + aggregato 1h mobile", "cyan"))
 
     # 1) DEM e mask mare
@@ -119,12 +136,6 @@ def main():
         )
     next_i, next_j = precompute_d8_next(config.D8_FILEPATH)
 
-    # Parametri flooding
-    K = getattr(config, "FLOOD_DECAY_K", 0.3)
-    R = getattr(config, "FLOOD_ROUTING_R", 0.8)
-    SUBS = getattr(config, "FLOOD_SUBSTEPS", 2)
-    print(colored(f"Flood params -> k={K}, r={R}, substeps={SUBS}", "yellow"))
-
     # 3) Allinea la CN alla griglia del DEM (una sola volta)
     print(colored("Processing Curve Number map...", "yellow"))
     align_radar_to_dem(config.CN_MAP_FILEPATH, config.DEM_FILEPATH, config.ALIGNED_CN_FILEPATH)
@@ -132,39 +143,34 @@ def main():
 
     # 4) Finestra di lavoro (file predizioni)
     print(colored("Costruisco finestra di predizioni...", "yellow"))
-    files_seq = build_expected_sequence(
+    files_seq = build_sequence_after_start_by_position(
         start_path=config.PREDICTION_START_FILE,
         steps=config.WINDOW_STEPS,
-        step_minutes=config.STEP_MINUTES,
         directory=config.PREDICTION_DIR
     )
+    cand = sorted(glob.glob(os.path.join(config.PREDICTION_DIR, "*_pred.tif*")))
+    print(colored(f"Candidati trovati: {len(cand)}", "yellow"))
+    for p in cand[:12]:
+        print("   -", os.path.basename(p), "->", parse_ts_from_fname(p))
 
-    if not files_seq:
-        print(colored("Nessun file da processare. Controlla config e regex.", "red"))
-        sys.exit(2)
+    print(colored(f"Finestra selezionata ({len(files_seq)}):", "yellow"))
+    for i, f in enumerate(files_seq, 1):
+        print(f"  [{i}] {os.path.basename(f)}  -> {parse_ts_from_fname(f)}")
 
-    first_name = os.path.basename(files_seq[0])
-    last_name = os.path.basename(files_seq[-1])
-    print(colored(f"Selezionati {len(files_seq)} file", "yellow"))
-    print(colored(f"  Primo: {first_name}", "yellow"))
-    print(colored(f"  Ultimo: {last_name}", "yellow"))
+    for i, f in enumerate(files_seq, 1):
+        print(colored(f"  [{i}/{len(files_seq)}] {os.path.basename(f)}", "blue"))
 
     # 5) Loop sugli step con stato H e aggregato mobile 1h (6x10')
     print(colored("Calcolo runoff & flood con stato, + aggregato 1h mobile...", "yellow"))
 
-    total_files = len(files_seq)
     H = None                               # stato di acqua per cella
     last6_flood = deque(maxlen=6)          # finestra mobile 1h (6 step da 10')
     last6_tags  = deque(maxlen=6)          # per naming 1h
-    step_times = []                        # cronologia tempi step per ETA media
 
     for idx, pred_path in enumerate(files_seq, 1):
-        step_start = time.time()
         ts = parse_ts_from_fname(pred_path)
         tag = ts_tag(ts)
-
-        pct = idx / total_files
-        print(colored(f"\n{progress_bar(pct)}  STEP {idx}/{total_files}  {os.path.basename(pred_path)}  (tag {tag})", "cyan"))
+        print(colored(f"  -> step {idx}: {os.path.basename(pred_path)}  (tag {tag})", "blue"))
 
         # RUNOFF step
         runoff = process_radar_file(
@@ -174,7 +180,7 @@ def main():
             config.DEM_FILEPATH
         )
         if runoff is None:
-            print(colored(f"     ⚠️ skip: runoff None per {pred_path}", "red"))
+            print(colored(f"     skip: runoff None per {pred_path}", "red"))
             continue
 
         # inizializza stato H
@@ -185,7 +191,9 @@ def main():
         H, flood = step_flood(
             H, runoff,
             next_i, next_j,
-            k=K, r=R, substeps=SUBS,
+            k=getattr(config, "FLOOD_DECAY_K", 0.3),
+            r=getattr(config, "FLOOD_ROUTING_R", 0.8),
+            substeps=getattr(config, "FLOOD_SUBSTEPS", 2),
             mask=MASK
         )
 
@@ -198,15 +206,12 @@ def main():
 
         # Salva runoff e flood per step
         out_runoff = os.path.join(OUTPUT_DIR, f"runoff_{tag}.nc")
-        out_flood  = os.path.join(OUTPUT_DIR, f"flood_{tag}.nc")
+        print(colored(f"     saving step runoff: {out_runoff}", "yellow"))
+        save_as_netcdf(runoff_to_save, out_runoff, config.DEM_FILEPATH)
 
-        try:
-            print(colored(f"     saving step runoff → {out_runoff}", "yellow"))
-            save_as_netcdf(runoff_to_save, out_runoff, config.DEM_FILEPATH)
-            print(colored(f"     saving step flood  → {out_flood}", "yellow"))
-            save_as_netcdf(flood_to_save, out_flood, config.DEM_FILEPATH)
-        except Exception as e:
-            print(colored(f"     ❌ errore salvataggio step {idx}: {e}", "red"))
+        out_flood = os.path.join(OUTPUT_DIR, f"flood_{tag}.nc")
+        print(colored(f"     saving step flood:  {out_flood}", "yellow"))
+        save_as_netcdf(flood_to_save, out_flood, config.DEM_FILEPATH)
 
         # Aggiornamento finestra mobile 1h
         last6_flood.append(flood_to_save)
@@ -219,30 +224,18 @@ def main():
 
             # naming: 1h che termina all'istante corrente
             tag_start = last6_tags[0]
-            tag_end   = last6_tags[-1]
+            tag_end = last6_tags[-1]
 
             out_fsum = os.path.join(OUTPUT_DIR, f"flood_1h_sum_{tag_start}_to_{tag_end}.nc")
             out_fmax = os.path.join(OUTPUT_DIR, f"flood_1h_max_{tag_start}_to_{tag_end}.nc")
 
-            try:
-                print(colored(f"     saving 1h flood SUM → {out_fsum}", "yellow"))
-                save_as_netcdf(flood_1h_sum, out_fsum, config.DEM_FILEPATH)
-                print(colored(f"     saving 1h flood MAX → {out_fmax}", "yellow"))
-                save_as_netcdf(flood_1h_max, out_fmax, config.DEM_FILEPATH)
-            except Exception as e:
-                print(colored(f"     ❌ errore salvataggio 1h agg.: {e}", "red"))
+            print(colored(f"     saving 1h flood SUM: {out_fsum}", "yellow"))
+            save_as_netcdf(flood_1h_sum, out_fsum, config.DEM_FILEPATH)
 
-        # --- timing e ETA ---
-        elapsed_step = time.time() - step_start
-        step_times.append(elapsed_step)
-        mean_step = np.mean(step_times[-5:])  # media ultimi 5 step (stima più stabile)
-        remaining_est = (total_files - idx) * mean_step
+            print(colored(f"     saving 1h flood MAX: {out_fmax}", "yellow"))
+            save_as_netcdf(flood_1h_max, out_fmax, config.DEM_FILEPATH)
 
-        print(colored(f"     Step time: {elapsed_step:.1f}s | Avg(last5): {mean_step:.1f}s | ETA: {fmt_eta(remaining_est)}", "green"))
-
-    elapsed_total = time.time() - start_time_total
-    print(colored(f"\n✅ Completato in {elapsed_total/60:.1f} min totali ({elapsed_total:.0f}s).", "green"))
-    print(colored(f"Output dir: {OUTPUT_DIR}", "yellow"))
+    print(colored("Flood per step + aggregati 1h completati ✅", "green"))
 
 
 if __name__ == "__main__":

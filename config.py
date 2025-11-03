@@ -44,7 +44,7 @@ ALIGNED_CN_FILEPATH = os.path.join(DATA_DIR, "aligned_cn_italy.tif")
 
 # Directory che contiene i file GeoTIFF delle precipitazioni predette dal modello AI
 PREDICTION_DIR = "/home/vbucciero/projects/flood_risk_model/dataset/predictions"
-PREDICTION_FILE = os.path.join(PREDICTION_DIR, "rdr0_d01_20250713Z1320_VMI_pred.tiff")  # Nuovo file random per test
+PREDICTION_FILE = os.path.join(PREDICTION_DIR, "rdr0_d01_20250725Z1300_VMI_pred.tiff")  # Nuovo file random per test
 
 PREDICTION_START_FILE = PREDICTION_FILE
 
