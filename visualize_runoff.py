@@ -5,7 +5,7 @@ from scipy.ndimage import zoom
 
 # Carica il file NetCDF
 print("Caricamento del file NetCDF...")
-ds = xr.open_dataset('outputs/runoff_single.nc')
+ds = xr.open_dataset('/storage/external_01/hiwefi/flood_outputs/floodrisk_20250713Z1340.nc')
 
 # Stampa informazioni sul dataset
 print("\nInformazioni sul dataset:")
@@ -53,8 +53,8 @@ plt.colorbar(label='runoff (mm)')
 plt.title('Critical Runoff Areas (>95th percentile)')
 
 plt.tight_layout()
-plt.savefig('outputs/runoff_single_preview.png', dpi=300, bbox_inches='tight')
-print("\nPreview salvata in outputs/runoff_single_preview.png")
+plt.savefig('outputs/floodrisk_single_preview1340', dpi=300, bbox_inches='tight')
+print("\nPreview salvata in outputs/floodrisk_single_preview1340.png")
 
 # Chiudi il dataset
 ds.close()
