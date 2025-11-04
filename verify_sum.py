@@ -1,22 +1,26 @@
 import xarray as xr
 import numpy as np
-import glob
-import os
 
-# Percorso agli output
-out_dir = "/storage/external_01/hiwefi/flood_outputs"
+# Percorsi ai file (modifica se necessario)
+flood_1300_path = "/storage/external_01/hiwefi/flood_outputs/floodrisk_20250725Z1300.nc"
+flood_1310_path = "/storage/external_01/hiwefi/flood_outputs/floodrisk_20250725Z1310.nc"
 
-# Carica i sei file singoli
-files = sorted(glob.glob(os.path.join(out_dir, "floodrisk_20250725Z*.nc")))
-datasets = [xr.open_dataset(f) for f in files]
+# Leggi i due file (variabile: runoff)
+flood_1300 = xr.open_dataset(flood_1300_path)["runoff"].values
+flood_1310 = xr.open_dataset(flood_1310_path)["runoff"].values
 
-# Somma dei 6 floodrisk singoli
-sum_6 = sum(ds["runoff"] for ds in datasets)  # se la variabile si chiama diversamente, ad es. 'floodrisk', cambia qui
+# Leggi anche il runoff istantaneo del passo 13:10
+runoff_1310_path = "/storage/external_01/hiwefi/flood_outputs/runoff_20250725Z1310.nc"
+runoff_1310 = xr.open_dataset(runoff_1310_path)["runoff"].values
 
-# Carica il floodrisk 1h
-flood_1h = xr.open_dataset(os.path.join(out_dir, "floodrisk_1h_20250725Z1800.nc"))["runoff"]
+# Somma flood precedente + runoff istantaneo (clip 0–1)
+flood_predicted = np.clip(flood_1300 + runoff_1310, 0, 1)
 
-# Confronto numerico
-diff = np.abs(sum_6 - flood_1h)
-print("Differenza media:", float(diff.mean()))
-print("Differenza massima:", float(diff.max()))
+# Differenza rispetto al flood dinamico del file successivo
+diff = flood_1310 - flood_predicted
+print("Differenza media:", np.nanmean(diff))
+print("Differenza massima:", np.nanmax(np.abs(diff)))
+
+# Mostra quanto del dominio coincide
+eq = np.isclose(flood_1310, flood_predicted, atol=1e-5)
+print(f"Celle identiche (entro tolleranza 1e-5): {np.sum(eq)} / {eq.size}")

@@ -1,32 +1,71 @@
+# main_run_1h.py
 import os
 import re
 import glob
-from collections import deque
 from datetime import datetime, timedelta
 
 import numpy as np
 from termcolor import colored
 
 from raster_utils import *
-from hydrology2 import (
-    process_radar_file,
-    save_as_netcdf,
-    precompute_d8_next,
-    step_flood
-)
+from hydrology2 import *
+import xarray as xr
 import config
 
-
-# === Dove salvare gli output (disco capiente) ===
+# === Dove salvare gli output per-step (compatibile con i tuoi risultati attuali) ===
 OUTPUT_DIR = "/storage/external_01/hiwefi/flood_outputs"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+def get_previous_flood_file(current_timestamp):
+    """
+    Cerca il file di flood risk precedente (10 minuti prima) nella directory OUTPUT_DIR.
+    
+    Args:
+        current_timestamp (datetime): Il timestamp del file corrente
+        
+    Returns:
+        str or None: Il path del file precedente se esiste, altrimenti None
+    """
+    prev_ts = current_timestamp - timedelta(minutes=10)
+    prev_tag = prev_ts.strftime("%Y%m%dZ%H%M")
+    prev_file = os.path.join(OUTPUT_DIR, f"floodrisk_{prev_tag}.nc")
+    
+    if os.path.exists(prev_file):
+        print(colored(f"Found previous flood risk file: {prev_file}", "green"))
+        return prev_file
+    else:
+        print(colored(f"No previous flood risk file found for timestamp {prev_tag}", "yellow"))
+        return None
 
-# --- Utilità per i file e i timestamp ---
+def load_previous_flood(file_path):
+    """
+    Carica il flood risk dal file NetCDF precedente.
+    
+    Args:
+        file_path (str): Path al file NetCDF
+        
+    Returns:
+        numpy.ndarray: Array 2D con i valori di flood risk
+    """
+    if file_path is None:
+        return None
+        
+    try:
+        ds = xr.open_dataset(file_path)
+        flood = ds["flood"].values if "flood" in ds else ds["value"].values
+        ds.close()
+        return flood
+    except Exception as e:
+        print(colored(f"Error loading previous flood risk: {e}", "red"))
+        return None
 
-FNAME_RE = re.compile(r".*?(\d{8})Z(\d{4}).*?_pred\.tif{1,2}f?$", re.IGNORECASE)
-# Esempio: rdr0_d01_20251008Z0300_VMI_pred.tiff
-# Gruppi: 20251008 e 0300
+# === Radice per la struttura prf2/d02/archive/... del file unico ===
+ARCHIVE_ROOT = getattr(config, "ARCHIVE_ROOT", "/storage/external_01/hiwefi")
+
+# --- Utility per timestamp nei nomi file ---
+
+FNAME_RE = re.compile(r".*?(\d{8})Z(\d{4})_VMI.*?_pred\.tif{1,2}f?$")
+# Esempio: rdr0_d01_20251008Z0300_VMI_pred.tiff  -> gruppi: 20251008 e 0300
 
 def parse_ts_from_fname(path):
     """Estrae un datetime dal nome file ..._YYYYMMDDZHHMM_..._pred.tiff."""
@@ -40,9 +79,8 @@ def parse_ts_from_fname(path):
         return None
 
 def ts_tag(dt: datetime | None) -> str:
-    """Ritorna tag 'YYYYMMDDZ%H%M' da un datetime (o 'unknown')."""
+    """Ritorna tag 'YYYYMMDDZHHMM' da un datetime (o 'unknown')."""
     return dt.strftime("%Y%m%dZ%H%M") if dt else "unknown"
-
 
 def build_expected_sequence(start_path, steps, step_minutes, directory):
     """
@@ -82,97 +120,118 @@ def build_expected_sequence(start_path, steps, step_minutes, directory):
         f"Non riesco a comporre {steps} file consecutivi da {start_path}. Mancanti: {missing_str}."
     )
 
-def build_sequence_after_start_by_position(start_path, steps, directory):
-    """Restituisce 'steps' file: lo start + i successivi in ordine (senza richiedere timestamp esatti)."""
-    all_preds = sorted(glob.glob(os.path.join(directory, "*_pred.tif*")))
-    if not all_preds:
-        raise FileNotFoundError(f"Nessun *_pred.tif* in {directory}")
+def ensure_prf2_archive_dir(dt_start):
+    """Crea la directory prf2/d02/archive/YYYY/MM/DD sotto ARCHIVE_ROOT."""
+    yyyy = dt_start.strftime("%Y")
+    mm = dt_start.strftime("%m")
+    dd = dt_start.strftime("%d")
+    dest_dir = os.path.join(ARCHIVE_ROOT, "prf2", "d02", "archive", yyyy, mm, dd)
+    os.makedirs(dest_dir, exist_ok=True)
+    return dest_dir
 
-    # prova a trovare start esatto nella lista
-    if start_path in all_preds:
-        idx0 = all_preds.index(start_path)
-        seq = all_preds[idx0: idx0 + steps]
-    else:
-        # ricava ts dallo start e prendi il primo file con ts >= start
-        start_ts = parse_ts_from_fname(start_path)
-        if start_ts is None:
-            raise ValueError(f"Impossibile ricavare ts da: {start_path}")
-        def ts_or_min(p):
-            ts = parse_ts_from_fname(p)
-            return ts if ts is not None else datetime.min
-        all_by_ts = sorted(all_preds, key=ts_or_min)
-        idx0 = next((k for k,p in enumerate(all_by_ts) if (parse_ts_from_fname(p) or datetime.min) >= start_ts), 0)
-        seq = all_by_ts[idx0: idx0 + steps]
+def save_single_step(path, arr, dem_like_path, var_name="value"):
+    """Salva un array 2D come NetCDF con georeferenziazione ricavata dal dem_like_path."""
+    save_as_netcdf(arr.astype(np.float32), path, dem_like_path)
 
-    if len(seq) < steps:
-        raise FileNotFoundError(f"Dopo lo start ho trovato solo {len(seq)} file; steps richiesti={steps}")
-    return seq
+def save_hourly_prf2(flood_stack, hourly_risk, times, dem_like_path, dt_start):
+    """
+    Salva un unico NetCDF con:
+      - flood(time, y, x): le 6 mappe di flooding DINAMICO
+      - hourly_risk(y, x): fattore di rischio orario
+      - time: 6 timestamp dei passi da 10'
+    Nomenclatura/struttura: prf2/d02/archive/YYYY/MM/DD/prf2_d02_YYYYMMDDZHH00.nc
+    """
+    # Stack a (time,y,x)
+    flood_stack = np.asarray(flood_stack, dtype=np.float32)
+    # Timestamp come np.datetime64
+    time_vals = np.array([np.datetime64(t) for t in times])
 
+    # Costruisci dataset
+    ds = xr.Dataset(
+        data_vars={
+            "flood": (("time", "y", "x"), flood_stack),
+            "hourly_risk": (("y", "x"), hourly_risk.astype(np.float32)),
+        },
+        coords={"time": time_vals},
+        attrs={"title": "Nowcast Flood - PRF2 archive", "convention": "simple"},
+    )
 
+    # Percorso di destinazione
+    dest_dir = ensure_prf2_archive_dir(dt_start)
+    # Nome file: timestamp arrotondato all’ora “di inizio finestra”
+    # Esempio: per start 2025-07-25 13:00 -> prf2_d02_20250725Z1300.nc
+    tag_start = dt_start.strftime("%Y%m%dZ%H00")
+    dest_path = os.path.join(dest_dir, f"prf2_d02_{tag_start}.nc")
 
-# --- Pipeline principale con stato + aggregato mobile 1h ---
+    # Scrivi NetCDF
+    comp = dict(zlib=True, complevel=4, dtype="float32", shuffle=True)
+    ds["flood"].encoding = comp
+    ds["hourly_risk"].encoding = comp
+    ds.to_netcdf(dest_path)
+
+    return dest_path
+
+# --- Pipeline principale 1h ---
 
 def main():
-    print(colored(f"USING config from: {os.path.abspath(config.__file__)}", "yellow"))
-    print(colored(f"PREDICTION_DIR      = {config.PREDICTION_DIR}", "yellow"))
-    print(colored(f"PREDICTION_START    = {config.PREDICTION_START_FILE}", "yellow"))
-    print(colored(f"WINDOW_STEPS        = {getattr(config, 'WINDOW_STEPS', None)}", "yellow"))
-    print(colored(f"STEP_MINUTES        = {getattr(config, 'STEP_MINUTES', None)}", "yellow"))
-
-    print(colored("Run flood: stato per step + aggregato 1h mobile", "cyan"))
+    print(colored("Nowcast 1h: 6 predizioni da 10' con flooding DINAMICO (stato di piena propagato)", "cyan"))
 
     # 1) DEM e mask mare
     print(colored("Loading DEM e sea mask...", "yellow"))
     dem_data, dem_profile = latlon_load_and_plot_dem(config.DEM_FILEPATH)
     MASK = sea_mask(config.DEM_FILEPATH)
 
-    # 2) Verifica D8 + precompute destinazioni
+    # 2) Verifica D8
     print(colored("Checking D8 flow direction file...", "yellow"))
     if os.path.exists(config.D8_FILEPATH):
-        print(colored(f"Using D8: {config.D8_FILEPATH}", "green"))
+        print(colored(f"Using existing D8 file: {config.D8_FILEPATH}", "green"))
     else:
         raise FileNotFoundError(
-            f"D8 file non trovato: {config.D8_FILEPATH}. Generarlo prima."
+            f"D8 file non trovato: {config.D8_FILEPATH}. Esegui prima il workflow completo per generarlo."
         )
-    next_i, next_j = precompute_d8_next(config.D8_FILEPATH)
 
     # 3) Allinea la CN alla griglia del DEM (una sola volta)
     print(colored("Processing Curve Number map...", "yellow"))
     align_radar_to_dem(config.CN_MAP_FILEPATH, config.DEM_FILEPATH, config.ALIGNED_CN_FILEPATH)
     cn_map, _ = latlon_load_and_plot_land_cover(config.ALIGNED_CN_FILEPATH)
 
-    # 4) Finestra di lavoro (file predizioni)
-    print(colored("Costruisco finestra di predizioni...", "yellow"))
-    files_seq = build_sequence_after_start_by_position(
+    # 3) Allinea la CN alla griglia del DEM (una sola volta)
+    print(colored("Processing Curve Number map...", "yellow"))
+    align_radar_to_dem(config.CN_MAP_FILEPATH, config.DEM_FILEPATH, config.ALIGNED_CN_FILEPATH)
+    cn_map, _ = latlon_load_and_plot_land_cover(config.ALIGNED_CN_FILEPATH)
+
+    # 4) Lista dei 6 file attesi (o fallback ordinato)
+    print(colored("Costruisco la finestra 1h di predizioni (6×10')...", "yellow"))
+    files_1h = build_expected_sequence(
         start_path=config.PREDICTION_START_FILE,
         steps=config.WINDOW_STEPS,
+        step_minutes=config.STEP_MINUTES,
         directory=config.PREDICTION_DIR
     )
-    cand = sorted(glob.glob(os.path.join(config.PREDICTION_DIR, "*_pred.tif*")))
-    print(colored(f"Candidati trovati: {len(cand)}", "yellow"))
-    for p in cand[:12]:
-        print("   -", os.path.basename(p), "->", parse_ts_from_fname(p))
+    for i, f in enumerate(files_1h, 1):
+        print(colored(f"  [{i}/{len(files_1h)}] {os.path.basename(f)}", "blue"))
 
-    print(colored(f"Finestra selezionata ({len(files_seq)}):", "yellow"))
-    for i, f in enumerate(files_seq, 1):
-        print(f"  [{i}] {os.path.basename(f)}  -> {parse_ts_from_fname(f)}")
+    # 5) Calcolo (runoff + flood dinamico) e salvataggi per-step
+    print(colored("Elaboro i 6 step con propagazione dello stato di piena...", "yellow"))
+    runoff_sum = None
+    previous_flood = None             # <-- stato di piena che si propaga
+    flood_dynamic_stack = []          # per costruire il file unico PRF2
+    times = []
 
-    for i, f in enumerate(files_seq, 1):
-        print(colored(f"  [{i}/{len(files_seq)}] {os.path.basename(f)}", "blue"))
-
-    # 5) Loop sugli step con stato H e aggregato mobile 1h (6x10')
-    print(colored("Calcolo runoff & flood con stato, + aggregato 1h mobile...", "yellow"))
-
-    H = None                               # stato di acqua per cella
-    last6_flood = deque(maxlen=6)          # finestra mobile 1h (6 step da 10')
-    last6_tags  = deque(maxlen=6)          # per naming 1h
-
-    for idx, pred_path in enumerate(files_seq, 1):
+    for idx, pred_path in enumerate(files_1h, 1):
         ts = parse_ts_from_fname(pred_path)
         tag = ts_tag(ts)
-        print(colored(f"  -> step {idx}: {os.path.basename(pred_path)}  (tag {tag})", "blue"))
+        times.append(ts)
+        print(colored(f"  -> process {idx}: {os.path.basename(pred_path)}  (tag {tag})", "blue"))
 
-        # RUNOFF step
+        # Per il primo file, controlla se esiste un flood precedente
+        if idx == 1:
+            prev_flood_file = get_previous_flood_file(ts)
+            if prev_flood_file:
+                previous_flood = load_previous_flood(prev_flood_file)
+                print(colored(f"Loaded previous flood state from: {prev_flood_file}", "green"))
+
+        # Runoff istantaneo da precipitazione prevista
         runoff = process_radar_file(
             pred_path,
             cn_map,
@@ -183,60 +242,74 @@ def main():
             print(colored(f"     skip: runoff None per {pred_path}", "red"))
             continue
 
-        # inizializza stato H
-        if H is None:
-            H = np.zeros_like(runoff, dtype=np.float32)
-
-        # FLOOD con stato (serbatoio + D8 routing)
-        H, flood = step_flood(
-            H, runoff,
-            next_i, next_j,
-            k=getattr(config, "FLOOD_DECAY_K", 0.3),
-            r=getattr(config, "FLOOD_ROUTING_R", 0.8),
-            substeps=getattr(config, "FLOOD_SUBSTEPS", 2),
-            mask=MASK
-        )
-
-        # --- sanitizza prima del salvataggio ---
         runoff_to_save = np.asarray(runoff, dtype=np.float32)
         np.nan_to_num(runoff_to_save, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
 
-        flood_to_save = np.asarray(flood, dtype=np.float32)
-        np.nan_to_num(flood_to_save, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
-
-        # Salva runoff e flood per step
+        # Salva runoff per-step (compatibilità con i tuoi output attuali)
         out_runoff = os.path.join(OUTPUT_DIR, f"runoff_{tag}.nc")
-        print(colored(f"     saving step runoff: {out_runoff}", "yellow"))
-        save_as_netcdf(runoff_to_save, out_runoff, config.DEM_FILEPATH)
+        print(colored(f"     saving single-step runoff: {out_runoff}", "yellow"))
+        save_single_step(out_runoff, runoff_to_save, config.DEM_FILEPATH, var_name="runoff")
 
-        out_flood = os.path.join(OUTPUT_DIR, f"flood_{tag}.nc")
-        print(colored(f"     saving step flood:  {out_flood}", "yellow"))
-        save_as_netcdf(flood_to_save, out_flood, config.DEM_FILEPATH)
+        # Flood istantaneo (dipende da runoff del passo)
+        flood_inst = compute_flood_risk(config.D8_FILEPATH, runoff_to_save)
 
-        # Aggiornamento finestra mobile 1h
-        last6_flood.append(flood_to_save)
-        last6_tags.append(tag)
+        # === Flood DINAMICO: usa stato precedente come condizione iniziale ===
+        if previous_flood is None:
+            flood_dyn = flood_inst
+        else:
+            # Prendi il massimo tra lo stato precedente e quello attuale
+            flood_dyn = np.maximum(flood_inst, previous_flood)
 
-        if len(last6_flood) == 6:
-            stack = np.stack(list(last6_flood), axis=0).astype(np.float32)
-            flood_1h_sum = np.sum(stack, axis=0).astype(np.float32)
-            flood_1h_max = np.max(stack, axis=0).astype(np.float32)
+        previous_flood = flood_dyn.copy()
 
-            # naming: 1h che termina all'istante corrente
-            tag_start = last6_tags[0]
-            tag_end = last6_tags[-1]
+        # Salva il flood dinamico per-step (sovrascriviamo il nome floodrisk_*)
+        out_flood = os.path.join(OUTPUT_DIR, f"floodrisk_{tag}.nc")
+        print(colored(f"     saving single-step FLOOD (DINAMICO): {out_flood}", "yellow"))
+        save_single_step(out_flood, flood_dyn.astype(np.float32), config.DEM_FILEPATH, var_name="flood")
 
-            out_fsum = os.path.join(OUTPUT_DIR, f"flood_1h_sum_{tag_start}_to_{tag_end}.nc")
-            out_fmax = os.path.join(OUTPUT_DIR, f"flood_1h_max_{tag_start}_to_{tag_end}.nc")
+        # Accumula runoff su 1h
+        if runoff_sum is None:
+            runoff_sum = np.zeros_like(runoff_to_save)
+        valid = np.isfinite(runoff_to_save)
+        runoff_sum[valid] += runoff_to_save[valid]
 
-            print(colored(f"     saving 1h flood SUM: {out_fsum}", "yellow"))
-            save_as_netcdf(flood_1h_sum, out_fsum, config.DEM_FILEPATH)
+        # Mantieni lo stack per il file unico PRF2
+        flood_dynamic_stack.append(flood_dyn.astype(np.float32))
 
-            print(colored(f"     saving 1h flood MAX: {out_fmax}", "yellow"))
-            save_as_netcdf(flood_1h_max, out_fmax, config.DEM_FILEPATH)
+    # 6) Salvataggi 1h (runoff cumulato + rischio orario)
+    if runoff_sum is None:
+        raise ValueError("Nessun runoff valido elaborato.")
 
-    print(colored("Flood per step + aggregati 1h completati ✅", "green"))
+    start_ts = parse_ts_from_fname(files_1h[0])
+    tag_start = ts_tag(start_ts)
 
+    # Runoff 1h
+    out_nc_runoff1h = os.path.join(OUTPUT_DIR, f"runoff_1h_{tag_start}.nc")
+    print(colored(f"Saving 1h runoff to {out_nc_runoff1h} ...", "yellow"))
+    runoff_sum_to_save = np.asarray(runoff_sum, dtype=np.float32)
+    np.nan_to_num(runoff_sum_to_save, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
+    save_single_step(out_nc_runoff1h, runoff_sum_to_save, config.DEM_FILEPATH, var_name="runoff_1h")
+
+    # Fattore di rischio orario (proxy: compute_flood_risk sul runoff cumulato)
+    flood_1h = compute_flood_risk(config.D8_FILEPATH, runoff_sum_to_save)
+    flood_1h = np.asarray(np.nan_to_num(flood_1h, nan=0.0, posinf=0.0, neginf=0.0), dtype=np.float32)
+
+    out_nc_flood1h = os.path.join(OUTPUT_DIR, f"floodrisk_1h_{tag_start}.nc")
+    print(colored(f"Saving 1h flood risk to {out_nc_flood1h} ...", "yellow"))
+    save_single_step(out_nc_flood1h, flood_1h, config.DEM_FILEPATH, var_name="floodrisk_1h")
+
+    # 7) File unico in stile PRF2 con 6 mappe flood dinamiche + rischio orario
+    print(colored("Costruisco il NetCDF unico PRF2 con le 6 mappe dinamiche + rischio orario...", "yellow"))
+    prf2_path = save_hourly_prf2(
+        flood_stack=flood_dynamic_stack,
+        hourly_risk=flood_1h,
+        times=times,
+        dem_like_path=config.DEM_FILEPATH,
+        dt_start=start_ts
+    )
+    print(colored(f"File PRF2 scritto in: {prf2_path}", "green"))
+
+    print(colored("Runoff & Flood DINAMICO 1h completati ✅", "green"))
 
 if __name__ == "__main__":
     main()
