@@ -70,17 +70,101 @@ def load_previous_flood(file_path):
         return None
         
     try:
-        ds = xr.open_dataset(file_path)
-        flood = ds["flood"].values if "flood" in ds else ds["value"].values
+        ds = xr.open_dataset(file_path, decode_times=False)
+        # Prima prova a cercare la variabile con il nome esatto che usiamo per salvare
+        if "value" in ds:
+            flood = ds["value"].values
+        # Altrimenti prova nomi alternativi che potrebbero essere stati usati in precedenza
+        elif "flood" in ds:
+            flood = ds["flood"].values
+        elif "floodrisk" in ds:
+            flood = ds["floodrisk"].values
+        elif "runoff" in ds:
+            flood = ds["runoff"].values
+        else:
+            raise KeyError(f"Nessuna variabile di flood risk trovata nel file. Variabili disponibili: {list(ds.variables.keys())}")
         ds.close()
         return flood
     except Exception as e:
         print(colored(f"Error loading previous flood risk: {e}", "red"))
         return None
 
-def save_single_step(path, arr, dem_like_path, var_name="value"):
-    """Salva un array 2D come NetCDF con georeferenziazione ricavata dal dem_like_path."""
-    save_as_netcdf(arr.astype(np.float32), path, dem_like_path)
+def save_single_step(path, arr, dem_like_path, var_name="value", timestamp=None):
+    """
+    Salva un array 2D come NetCDF con georeferenziazione ricavata dal dem_like_path.
+    Ritorna le statistiche (min, media, max) dei dati.
+    
+    Args:
+        path: percorso del file di output
+        arr: array da salvare
+        dem_like_path: file di riferimento per la georeferenziazione
+        var_name: nome della variabile
+        timestamp: datetime opzionale per il timestamp
+    """
+    return save_as_netcdf(arr.astype(np.float32), path, dem_like_path, variable_name=var_name, timestamp=timestamp)
+
+def calculate_risk_index(flood_risk_map, mask):
+    """
+    Calcola un indice di rischio globale per la mappa di flood risk.
+    Per ora usa una metrica semplice basata sulla media pesata delle aree allagate,
+    considerando solo le zone terrestri (mask == 1).
+    
+    Args:
+        flood_risk_map: numpy.ndarray con i valori di flood risk
+        mask: numpy.ndarray con la maschera terra/mare (1 = terra, 0 = mare)
+    
+    Returns:
+        float: indice di rischio normalizzato tra 0 e 1
+    """
+    # Considera solo le aree terrestri
+    valid_area = flood_risk_map[mask == 1]
+    
+    if len(valid_area) == 0:
+        return 0.0
+    
+    # Calcola statistiche sulle aree allagate
+    mean_risk = np.mean(valid_area)
+    max_risk = np.max(valid_area)
+    flood_area_ratio = np.sum(valid_area > 0.5) / len(valid_area)  # percentuale di area con rischio > 0.5
+    
+    # Combina le metriche (puoi modificare questi pesi)
+    risk_index = (0.4 * mean_risk + 0.3 * max_risk + 0.3 * flood_area_ratio)
+    
+    return float(risk_index)
+
+def append_to_risk_log(timestamp, risk_index, runoff_stats, flood_stats, output_file):
+    """
+    Aggiunge una riga al file CSV del log di rischio con statistiche dettagliate.
+    
+    Args:
+        timestamp: datetime object con il timestamp
+        risk_index: float con l'indice di rischio
+        runoff_stats: tuple (min, mean, max) delle statistiche del runoff
+        flood_stats: tuple (min, mean, max) delle statistiche del flood risk
+        output_file: str, path al file CSV di output
+    """
+    import csv
+    import os
+    
+    # Crea l'header se il file non esiste
+    file_exists = os.path.exists(output_file)
+    
+    with open(output_file, 'a', newline='') as f:
+        writer = csv.writer(f)
+        if not file_exists:
+            writer.writerow(['Timestamp', 'FloodRisk_Index', 
+                           'Runoff_Min', 'Runoff_Mean', 'Runoff_Max',
+                           'FloodRisk_Min', 'FloodRisk_Mean', 'FloodRisk_Max'])
+        writer.writerow([
+            timestamp.strftime("%Y-%m-%d %H:%M"),
+            f"{risk_index:.4f}",
+            f"{runoff_stats[0]:.4f}",
+            f"{runoff_stats[1]:.4f}",
+            f"{runoff_stats[2]:.4f}",
+            f"{flood_stats[0]:.4f}",
+            f"{flood_stats[1]:.4f}",
+            f"{flood_stats[2]:.4f}"
+        ])
 
 def main():
     import argparse
@@ -143,10 +227,10 @@ def main():
     runoff_to_save = np.asarray(runoff, dtype=np.float32)
     np.nan_to_num(runoff_to_save, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
 
-    # Salva runoff per-step
+    # Salva runoff per-step e ottieni le statistiche
     out_runoff = os.path.join(OUTPUT_DIR, f"runoff_{tag}.nc")
     print(colored(f"     saving runoff: {out_runoff}", "yellow"))
-    save_single_step(out_runoff, runoff_to_save, config.DEM_FILEPATH, var_name="runoff")
+    runoff_stats = save_single_step(out_runoff, runoff_to_save, config.DEM_FILEPATH, var_name="runoff", timestamp=current_ts)
 
     # Flood istantaneo (dipende da runoff del passo)
     flood_inst = compute_flood_risk(config.D8_FILEPATH, runoff_to_save)
@@ -159,10 +243,16 @@ def main():
         print(colored("Combining with previous flood state", "green"))
         flood_dyn = np.maximum(flood_inst, previous_flood)
 
-    # Salva il flood dinamico
+    # Salva il flood dinamico e ottieni le statistiche
     out_flood = os.path.join(OUTPUT_DIR, f"floodrisk_{tag}.nc")
     print(colored(f"Saving flood risk to {out_flood} ...", "yellow"))
-    save_single_step(out_flood, flood_dyn.astype(np.float32), config.DEM_FILEPATH, var_name="flood")
+    flood_stats = save_single_step(out_flood, flood_dyn.astype(np.float32), config.DEM_FILEPATH, var_name="floodrisk", timestamp=current_ts)
+    
+    # Calcola e salva l'indice di rischio e le statistiche
+    risk_index = calculate_risk_index(flood_dyn, MASK)
+    risk_log_file = os.path.join(OUTPUT_DIR, "flood_risk_index.csv")
+    append_to_risk_log(current_ts, risk_index, runoff_stats, flood_stats, risk_log_file)
+    print(colored(f"Risk index calculated and saved: {risk_index:.4f}", "cyan"))
 
     print(colored("Elaborazione completata ✅", "green"))
 

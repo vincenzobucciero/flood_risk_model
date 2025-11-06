@@ -733,9 +733,20 @@ def save_as_tiff(data, output_path, reference_file):
     with rasterio.open(output_path, "w", **profile) as dst:
         dst.write(data, 1)
 
-def save_as_netcdf(data, output_path, reference_file):
+def save_as_netcdf(data, output_path, reference_file, variable_name="value", timestamp=None):
     """
-    Salva un array NumPy come file NetCDF (.nc), includendo latitudine e longitudine.
+    Salva un array NumPy come file NetCDF (.nc), includendo latitudine, longitudine e timestamp.
+    Calcola e restituisce anche le statistiche dei dati (min, media, max).
+    
+    Args:
+        data: Array 2D da salvare
+        output_path: Percorso del file di output
+        reference_file: File di riferimento per la georeferenziazione
+        variable_name: Nome della variabile principale (default: "value")
+        timestamp: Timestamp in formato stringa (es. "20250611Z1630") o oggetto datetime
+    
+    Returns:
+        tuple: (min, media, max) dei dati
     """
     nrows, ncols = data.shape
     
@@ -751,22 +762,67 @@ def save_as_netcdf(data, output_path, reference_file):
 
     with Dataset(output_path, "w", format="NETCDF4") as nc:
         # Crea le dimensioni
-        nc.createDimension("y", nrows)
-        nc.createDimension("x", ncols)
+        nc.createDimension("time", 1)  # Dimensione singola per il timestamp
+        nc.createDimension("longitude", ncols)
+        nc.createDimension("latitude", nrows)
 
         # Crea le variabili di latitudine e longitudine
-        lat_var = nc.createVariable("latitude", "f4", ("y",))
-        lon_var = nc.createVariable("longitude", "f4", ("x",))
+        time_var = nc.createVariable("time", "i4", ("time",))  # Cambiato in i4 per intero
+        lon_var = nc.createVariable("longitude", "f4", ("longitude",))
+        lat_var = nc.createVariable("latitude", "f4", ("latitude",))
+        
+        
+        time_var.description = "Time"
+        time_var.long_name = "time"
+        time_var.units = "hours since 1900-01-01 00:00:0.0"
 
-        lat_var.units = "degrees_north"
+        lon_var.description = "Longitude"
         lon_var.units = "degrees_east"
 
+        lat_var.description = "Latitude"
+        lat_var.units = "degrees_north"
+        
         lat_var[:] = lat
         lon_var[:] = lon
+        
+        # Gestione del timestamp
+        if timestamp is not None:
+            if isinstance(timestamp, int):
+                time_var[0] = timestamp  # Assegna direttamente l'intero
+            else:
+                # Se è un oggetto datetime, converte in ore dal 1900-01-01
+                from datetime import datetime
+                ref_date = datetime(1900, 1, 1)
+                if isinstance(timestamp, str):
+                    # Converte la stringa in datetime
+                    timestamp = datetime.strptime(timestamp, "%Y%m%dZ%H%M")
+                delta = timestamp - ref_date
+                hours = int(delta.total_seconds() / 3600)
+                time_var[0] = hours
 
-        # Crea la variabile runoff
-        runoff_var = nc.createVariable("runoff", "f4", ("y", "x"))
-        runoff_var.units = "mm"  # Unità di misura personalizzabile
+        # Crea la variabile principale con il nome specificato
+        main_var = nc.createVariable(variable_name, "f4", ("time", "latitude", "longitude"))
+        
+        # Imposta le unità appropriate in base al tipo di variabile
+        if variable_name == "runoff":
+            main_var.units = "mm"  # millimetri di deflusso superficiale
+        elif variable_name == "floodrisk":
+            main_var.units = "normalized_flood"  # valore normalizzato dell'allagamento
+            main_var.description = "Combined normalized flood risk (70% runoff, 30% flow direction) with gaussian smoothing"
+        else:
+            main_var.units = "value"
 
         # Scrivi i dati
-        runoff_var[:, :] = data
+        main_var[:, :] = data
+        
+        # Calcola le statistiche
+        data_min = float(np.min(data))
+        data_mean = float(np.mean(data))
+        data_max = float(np.max(data))
+        
+        # Aggiungi le statistiche come attributi
+        main_var.min_value = data_min
+        main_var.mean_value = data_mean
+        main_var.max_value = data_max
+        
+        return data_min, data_mean, data_max
