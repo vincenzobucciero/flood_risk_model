@@ -71,18 +71,14 @@ def load_previous_flood(file_path):
         
     try:
         ds = xr.open_dataset(file_path, decode_times=False)
-        # Prima prova a cercare la variabile con il nome esatto che usiamo per salvare
-        if "value" in ds:
+        # Usa la nuova struttura con variabile 'flood'
+        if "flood" in ds:
+            flood = ds["flood"].values[0]  # Prendi il primo timestep
+        # Fallback per retrocompatibilità
+        elif "value" in ds:
             flood = ds["value"].values
-        # Altrimenti prova nomi alternativi che potrebbero essere stati usati in precedenza
-        elif "flood" in ds:
-            flood = ds["flood"].values
-        elif "floodrisk" in ds:
-            flood = ds["floodrisk"].values
-        elif "runoff" in ds:
-            flood = ds["runoff"].values
         else:
-            raise KeyError(f"Nessuna variabile di flood risk trovata nel file. Variabili disponibili: {list(ds.variables.keys())}")
+            raise KeyError(f"Nessuna variabile flood trovata nel file. Variabili disponibili: {list(ds.variables.keys())}")
         ds.close()
         return flood
     except Exception as e:
@@ -132,15 +128,15 @@ def calculate_risk_index(flood_risk_map, mask):
     
     return float(risk_index)
 
-def append_to_risk_log(timestamp, risk_index, runoff_stats, flood_stats, output_file):
+def append_to_risk_log(timestamp, risk_index, runoff_result, flood_result, output_file):
     """
     Aggiunge una riga al file CSV del log di rischio con statistiche dettagliate.
     
     Args:
         timestamp: datetime object con il timestamp
         risk_index: float con l'indice di rischio
-        runoff_stats: tuple (min, mean, max) delle statistiche del runoff
-        flood_stats: tuple (min, mean, max) delle statistiche del flood risk
+        runoff_result: dict con chiavi 'runoff' e 'runoff_stats' dal salvataggio del runoff
+        flood_result: dict con chiavi 'flood' e 'floodrisk' dal salvataggio del flood
         output_file: str, path al file CSV di output
     """
     import csv
@@ -158,12 +154,12 @@ def append_to_risk_log(timestamp, risk_index, runoff_stats, flood_stats, output_
         writer.writerow([
             timestamp.strftime("%Y-%m-%d %H:%M"),
             f"{risk_index:.4f}",
-            f"{runoff_stats[0]:.4f}",
-            f"{runoff_stats[1]:.4f}",
-            f"{runoff_stats[2]:.4f}",
-            f"{flood_stats[0]:.4f}",
-            f"{flood_stats[1]:.4f}",
-            f"{flood_stats[2]:.4f}"
+            f"{np.nanmin(runoff_result['pixel_min']):.4f}",
+            f"{np.nanmean(runoff_result['pixel_mean']):.4f}",
+            f"{np.nanmax(runoff_result['pixel_max']):.4f}",
+            f"{np.nanmin(flood_result['pixel_min']):.4f}",
+            f"{np.nanmean(flood_result['pixel_mean']):.4f}",
+            f"{np.nanmax(flood_result['pixel_max']):.4f}"
         ])
 
 def main():
@@ -230,7 +226,7 @@ def main():
     # Salva runoff per-step e ottieni le statistiche
     out_runoff = os.path.join(OUTPUT_DIR, f"runoff_{tag}.nc")
     print(colored(f"     saving runoff: {out_runoff}", "yellow"))
-    runoff_stats = save_single_step(out_runoff, runoff_to_save, config.DEM_FILEPATH, var_name="runoff", timestamp=current_ts)
+    runoff_results = save_single_step(out_runoff, runoff_to_save, config.DEM_FILEPATH, var_name="runoff", timestamp=current_ts)
 
     # Flood istantaneo (dipende da runoff del passo)
     flood_inst = compute_flood_risk(config.D8_FILEPATH, runoff_to_save)
@@ -246,12 +242,25 @@ def main():
     # Salva il flood dinamico e ottieni le statistiche
     out_flood = os.path.join(OUTPUT_DIR, f"floodrisk_{tag}.nc")
     print(colored(f"Saving flood risk to {out_flood} ...", "yellow"))
-    flood_stats = save_single_step(out_flood, flood_dyn.astype(np.float32), config.DEM_FILEPATH, var_name="floodrisk", timestamp=current_ts)
+    flood_results = save_single_step(out_flood, flood_dyn.astype(np.float32), config.DEM_FILEPATH, var_name="flood", timestamp=current_ts)
     
     # Calcola e salva l'indice di rischio e le statistiche
     risk_index = calculate_risk_index(flood_dyn, MASK)
     risk_log_file = os.path.join(OUTPUT_DIR, "flood_risk_index.csv")
-    append_to_risk_log(current_ts, risk_index, runoff_stats, flood_stats, risk_log_file)
+    
+    print("\nStatistiche dettagliate del flood risk:")
+    flood_values = flood_results['pixel_mean'].flatten()  # Converti la matrice in array 1D
+    flood_values = flood_values[flood_values > 0]  # Considera solo i valori > 0
+    
+    print(f"Numero di pixel con flood risk > 0: {len(flood_values)}")
+    print(f"Distribuzione dei valori di flood risk:")
+    print(f"- 25° percentile: {np.percentile(flood_values, 25):.4f}")
+    print(f"- Mediana: {np.percentile(flood_values, 50):.4f}")
+    print(f"- 75° percentile: {np.percentile(flood_values, 75):.4f}")
+    print(f"- Media: {np.mean(flood_values):.4f}")
+    print(f"- Deviazione standard: {np.std(flood_values):.4f}")
+    
+    append_to_risk_log(current_ts, risk_index, runoff_results, flood_results, risk_log_file)
     print(colored(f"Risk index calculated and saved: {risk_index:.4f}", "cyan"))
 
     print(colored("Elaborazione completata ✅", "green"))

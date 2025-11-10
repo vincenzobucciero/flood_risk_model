@@ -433,6 +433,7 @@ from termcolor import colored
 from netCDF4 import Dataset
 import xarray as xr
 import time
+from datetime import datetime
 from mpi4py import MPI
 import subprocess
 
@@ -733,6 +734,7 @@ def save_as_tiff(data, output_path, reference_file):
     with rasterio.open(output_path, "w", **profile) as dst:
         dst.write(data, 1)
 
+'''
 def save_as_netcdf(data, output_path, reference_file, variable_name="value", timestamp=None):
     """
     Salva un array NumPy come file NetCDF (.nc), includendo latitudine, longitudine e timestamp.
@@ -800,29 +802,205 @@ def save_as_netcdf(data, output_path, reference_file, variable_name="value", tim
                 hours = int(delta.total_seconds() / 3600)
                 time_var[0] = hours
 
-        # Crea la variabile principale con il nome specificato
-        main_var = nc.createVariable(variable_name, "f4", ("time", "latitude", "longitude"))
-        
-        # Imposta le unità appropriate in base al tipo di variabile
+        # Crea la variabile principale (flood o runoff)
         if variable_name == "runoff":
-            main_var.units = "mm"  # millimetri di deflusso superficiale
-        elif variable_name == "floodrisk":
-            main_var.units = "normalized_flood"  # valore normalizzato dell'allagamento
-            main_var.description = "Combined normalized flood risk (70% runoff, 30% flow direction) with gaussian smoothing"
-        else:
-            main_var.units = "value"
-
+            main_var = nc.createVariable("runoff", "f4", ("time", "latitude", "longitude"))
+            main_var.units = "mm"
+            main_var.description = "Surface runoff in millimeters"
+        else:  # flood o altri casi
+            main_var = nc.createVariable("flood", "f4", ("time", "latitude", "longitude"))
+            main_var.units = "normalized_flood"
+            main_var.description = "Normalized flood values (0-1)"
+        
         # Scrivi i dati
-        main_var[:, :] = data
+        main_var[0, :, :] = data
         
         # Calcola le statistiche
         data_min = float(np.min(data))
         data_mean = float(np.mean(data))
         data_max = float(np.max(data))
         
-        # Aggiungi le statistiche come attributi
-        main_var.min_value = data_min
-        main_var.mean_value = data_mean
-        main_var.max_value = data_max
+        # Crea le variabili per le statistiche con dimensione temporale
+        stats_var_name = "runoff_stats" if variable_name == "runoff" else "floodrisk"
+        stats_min = nc.createVariable(f"{stats_var_name}_min", "f4", ("time",))
+        stats_mean = nc.createVariable(f"{stats_var_name}_mean", "f4", ("time",))
+        stats_max = nc.createVariable(f"{stats_var_name}_max", "f4", ("time",))
         
-        return data_min, data_mean, data_max
+        # Imposta descrizioni e unità
+        description = "Runoff statistics" if variable_name == "runoff" else "Flood risk statistics"
+        units = "mm" if variable_name == "runoff" else "normalized_flood"
+        
+        stats_min.description = f"Minimum value of {description}"
+        stats_min.units = units
+        stats_mean.description = f"Mean value of {description}"
+        stats_mean.units = units
+        stats_max.description = f"Maximum value of {description}"
+        stats_max.units = units
+        
+        # Assegna i valori
+        stats_min[0] = data_min
+        stats_mean[0] = data_mean
+        stats_max[0] = data_max
+        
+        # Crea un dizionario con i valori delle statistiche per retrocompatibilità
+        stats = {
+            'min': float(stats_min[0]),
+            'mean': float(stats_mean[0]),
+            'max': float(stats_max[0])
+        }
+        
+        return {
+            variable_name: main_var[:],
+            f"{stats_var_name}": stats
+        }
+'''
+
+def save_as_netcdf(data, output_path, reference_file, variable_name="runoff", timestamp=None):
+    """
+    Salva un array NumPy come file NetCDF (.nc) in formato CF-like, assicurando che la
+    variabile principale sia geo2D/geo3D (time, latitude, longitude) e che siano scritte
+    le statistiche pixel-wise (min/mean/max) come variabili 2D (latitude, longitude).
+
+    Parametri:
+        data: array 2D (y,x) oppure 3D (time,y,x). Se 2D viene convertito a (1,y,x).
+        output_path: percorso del file di output (es. "out.nc")
+        reference_file: file raster (tiff) di riferimento per georeferenziazione
+        variable_name: nome della variabile principale (es. "runoff" o "floodrisk")
+        timestamp: None, singolo valore (str/int/datetime) o lista di valori con lunghezza == time
+                   - se None verrà impostata una dimensione time con valori placeholder 0..nt-1
+                   - per stringhe formato accettato: "YYYYmmddZHHMM" oppure ISO parsable
+
+    Ritorna:
+        dict con chiavi:
+          - "pixel_min", "pixel_mean", "pixel_max": numpy array 2D delle statistiche per pixel
+          - "output_path": percorso del file scritto
+    """
+
+    # Normalizza la forma dei dati: 2D -> 3D con dimensione time = 1
+    arr = np.asarray(data)
+    if arr.ndim == 2:
+        data3 = arr[np.newaxis, :, :].astype(np.float32)
+    elif arr.ndim == 3:
+        data3 = arr.astype(np.float32)
+    else:
+        raise ValueError("`data` deve essere 2D (y,x) o 3D (time,y,x)")
+
+    nt, nrows, ncols = data3.shape
+
+    # Ottieni georeferenziazione e CRS dal file di riferimento
+    with rasterio.open(reference_file) as src:
+        transform = src.transform
+        crs = src.crs
+        x_min, y_max = transform * (0, 0)
+        x_max, y_min = transform * (ncols, nrows)
+
+    # Creiamo i vettori lon/lat dal transform (lineari)
+    lon = np.linspace(x_min, x_max, ncols, dtype=np.float32)
+    lat = np.linspace(y_max, y_min, nrows, dtype=np.float32)
+
+    # Helper per convertire timestamp in "hours since 1900-01-01"
+    def to_hours_since_1900(t):
+        ref_date = datetime(1900, 1, 1)
+        if isinstance(t, int):
+            return int(t)
+        if isinstance(t, str):
+            # prova formato YYYYmmddZHHMM altrimenti ISO
+            try:
+                dt = datetime.strptime(t, "%Y%m%dZ%H%M")
+            except Exception:
+                dt = datetime.fromisoformat(t)
+        elif isinstance(t, datetime):
+            dt = t
+        else:
+            dt = datetime.fromisoformat(str(t))
+        return int((dt - ref_date).total_seconds() / 3600)
+
+    # Apri NetCDF e scrivi i dati in formato CF-like
+    with Dataset(output_path, "w", format="NETCDF4") as nc:
+        # Dimensioni
+        nc.createDimension("time", nt)
+        nc.createDimension("latitude", nrows)
+        nc.createDimension("longitude", ncols)
+
+        # Variabili coordinate
+        time_var = nc.createVariable("time", "i4", ("time",))
+        lat_var = nc.createVariable("latitude", "f4", ("latitude",))
+        lon_var = nc.createVariable("longitude", "f4", ("longitude",))
+
+        # Attributi delle coordinate
+        lat_var.units = "degrees_north"
+        lat_var.standard_name = "latitude"
+        lon_var.units = "degrees_east"
+        lon_var.standard_name = "longitude"
+
+        lat_var[:] = lat
+        lon_var[:] = lon
+
+        # Gestione della variabile time
+        time_var.units = "hours since 1900-01-01 00:00:0.0"
+        time_var.long_name = "time"
+        if timestamp is None:
+            time_var[:] = np.arange(nt, dtype=np.int32)
+        else:
+            # se timestamp è una lista/array con lunghezza nt -> converti
+            if hasattr(timestamp, "__len__") and not isinstance(timestamp, (str, bytes)):
+                if len(timestamp) != nt:
+                    raise ValueError("Lunghezza di `timestamp` diversa dalla dimensione time dei dati")
+                time_var[:] = np.array([to_hours_since_1900(t) for t in timestamp], dtype=np.int32)
+            else:
+                base = to_hours_since_1900(timestamp)
+                time_var[:] = np.arange(base, base + nt, dtype=np.int32)
+
+        # Variabile principale (time, latitude, longitude)
+        main_var = nc.createVariable(variable_name, "f4", ("time", "latitude", "longitude"), zlib=True, complevel=4)
+        # Impostazione units: compatibile con il tuo uso (runoff in mm, floodrisk normalizzato)
+        if variable_name.lower() in ("floodrisk", "flood"):
+            main_var.units = "normalized_flood"
+        else:
+            main_var.units = "mm"
+        main_var.long_name = f"{variable_name} per pixel"
+        main_var.coordinates = "latitude longitude"
+
+        # Aggiungi info CRS se disponibile (scrive WKT come variabile 'crs' se possibile)
+        if crs is not None:
+            try:
+                crs_var = nc.createVariable("crs", "i4")
+                crs_var.spatial_ref = crs.to_wkt()
+                main_var.grid_mapping = "crs"
+            except Exception:
+                # non critico se fallisce
+                pass
+
+        # Scrivi i dati (ordine: time, latitude, longitude)
+        main_var[:, :, :] = data3
+
+        # Calcola statistiche pixel-wise lungo la dimensione time
+        pix_min = np.min(data3, axis=0).astype(np.float32)
+        pix_mean = np.mean(data3, axis=0).astype(np.float32)
+        pix_max = np.max(data3, axis=0).astype(np.float32)
+
+        # Scrivi le statistiche come variabili 2D (latitude, longitude)
+        vmin = nc.createVariable(f"{variable_name}_min", "f4", ("latitude", "longitude"), zlib=True, complevel=4)
+        vmean = nc.createVariable(f"{variable_name}_mean", "f4", ("latitude", "longitude"), zlib=True, complevel=4)
+        vmax = nc.createVariable(f"{variable_name}_max", "f4", ("latitude", "longitude"), zlib=True, complevel=4)
+
+        units = main_var.units
+        vmin.units = units
+        vmean.units = units
+        vmax.units = units
+
+        vmin.long_name = f"Pixel-wise minimum of {variable_name} over time"
+        vmean.long_name = f"Pixel-wise mean of {variable_name} over time"
+        vmax.long_name = f"Pixel-wise maximum of {variable_name} over time"
+
+        vmin[:, :] = pix_min
+        vmean[:, :] = pix_mean
+        vmax[:, :] = pix_max
+
+    # Ritorna le statistiche (pixel-wise) insieme al percorso del file creato
+    return {
+        "pixel_min": pix_min,
+        "pixel_mean": pix_mean,
+        "pixel_max": pix_max,
+        "output_path": output_path
+    }
